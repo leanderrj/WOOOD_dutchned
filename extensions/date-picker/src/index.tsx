@@ -149,44 +149,46 @@ function DeliveryDatePicker() {
   }
 
   return (
-    <View border="base" cornerRadius="base" padding="base" maxInlineSize={320}>
-      <BlockStack spacing="base">
-        <Heading level={2}>{t('title')}</Heading>
+    <BlockStack inlineAlignment="center">
+      <View border="base" cornerRadius="base" padding="base" maxInlineSize={320}>
+        <BlockStack spacing="base">
+          <Heading level={2}>{t('title')}</Heading>
 
 
-        {loading && (
-          <BlockStack spacing="tight">
-            <Text appearance="subdued">{t('loading')}</Text>
-            <SkeletonText />
-            <SkeletonText />
-            <SkeletonText />
-          </BlockStack>
-        )}
+          {loading && (
+            <BlockStack spacing="tight">
+              <Text appearance="subdued">{t('loading')}</Text>
+              <SkeletonText />
+              <SkeletonText />
+              <SkeletonText />
+            </BlockStack>
+          )}
 
-        {errorKey && (
-          <Banner status="critical">
-            <Text>{t(errorKey)}</Text>
-          </Banner>
-        )}
+          {errorKey && (
+            <Banner status="critical">
+              <Text>{t(errorKey)}</Text>
+            </Banner>
+          )}
 
-        {!loading && !errorKey && availableDates.length > 0 && (
-          <DatePicker
-            selected={selectedDate}
-            onChange={(selection: string | { start: string; end: string; }) => {
-              if (typeof selection === 'string') {
-                handleDateSelect(selection);
-              }
-            }}
-            disabled={disabledDates}
-          />
-        )}
+          {!loading && !errorKey && availableDates.length > 0 && (
+            <DatePicker
+              selected={selectedDate}
+              onChange={(selection: string | { start: string; end: string; }) => {
+                if (typeof selection === 'string') {
+                  handleDateSelect(selection);
+                }
+              }}
+              disabled={disabledDates}
+            />
+          )}
 
-        {!loading && !errorKey && availableDates.length === 0 && (
-          <Banner status="info">
-            <Text>{t('no_dates_available')}</Text>
-          </Banner>
-        )}
-      </BlockStack>
-    </View>
+          {!loading && !errorKey && availableDates.length === 0 && (
+            <Banner status="info">
+              <Text>{t('no_dates_available')}</Text>
+            </Banner>
+          )}
+        </BlockStack>
+      </View>
+    </BlockStack>
   );
 }
