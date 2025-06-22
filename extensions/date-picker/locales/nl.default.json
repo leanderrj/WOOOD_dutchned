@@ -1,0 +1,12 @@
+{
+  "title": "Kies uw bezorgdatum",
+  "select_date": "Selecteer de gewenste bezorgdatum.",
+  "loading": "Bezorgdatums laden...",
+  "error_loading": "Kon bezorgdatums niet laden.",
+  "error_unexpected_data": "Onverwachte gegevens van de server ontvangen.",
+  "error_saving": "Kon bezorgdatum niet opslaan.",
+  "available_dates": "Beschikbare bezorgdata:",
+  "select_accessibility_label": "Selecteer bezorgdatum",
+  "selected_date_banner": "Bezorgdatum geselecteerd:",
+  "no_dates_available": "Er zijn momenteel geen bezorgdata beschikbaar."
+}

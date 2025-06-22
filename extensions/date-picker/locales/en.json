@@ -1,0 +1,12 @@
+{
+  "title": "Choose your delivery date",
+  "select_date": "Select your desired delivery date.",
+  "loading": "Loading delivery dates...",
+  "error_loading": "Could not load delivery dates.",
+  "error_unexpected_data": "Received unexpected data from the server.",
+  "error_saving": "Could not save delivery date.",
+  "available_dates": "Available delivery dates:",
+  "select_accessibility_label": "Select delivery date ",
+  "selected_date_banner": "Delivery date selected: ",
+  "no_dates_available": "There are currently no delivery dates available."
+}

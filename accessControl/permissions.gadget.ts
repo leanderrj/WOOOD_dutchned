@@ -76,6 +76,9 @@ export const permissions: GadgetPermissions = {
     },
     unauthenticated: {
       storageKey: "unauthenticated",
+      actions: {
+        getDeliveryDates: true,
+      },
     },
   },
 };

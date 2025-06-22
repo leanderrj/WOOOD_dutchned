@@ -1,0 +1,22 @@
+{
+    "name": "date-picker",
+    "version": "0.0.1",
+    "license": "UNLICENSED",
+    "scripts": {
+        "shopify": "npm exec -- shopify",
+        "build": "npm exec -- shopify app function build",
+        "preview": "npm exec -- shopify app function run"
+    },
+    "dependencies": {
+        "@gadget-client/woood": "link:../../.gadget/client",
+        "@gadgetinc/react": "^0.21.2",
+        "@shopify/ui-extensions": "^2024.1.0",
+        "@shopify/ui-extensions-react": "^2024.1.0",
+        "react": "^18.0.0",
+        "react-reconciler": "0.29.0"
+    },
+    "devDependencies": {
+        "@types/react": "^18.0.0",
+        "react-reconciler": "0.29.0"
+    }
+}

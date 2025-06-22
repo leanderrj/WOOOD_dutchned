@@ -16,7 +16,7 @@ export default extension("purchase.checkout.block.render", (root, api) => {
       root.replaceChildren(
         root.createComponent(
           Banner,
-          { title: "date-pickcer", status: "warning" },
+          { title: "example", status: "warning" },
           api.i18n.translate("attributeChangesAreNotSupported")
         )
       );
@@ -29,7 +29,7 @@ export default extension("purchase.checkout.block.render", (root, api) => {
           [
             root.createComponent(
               Banner,
-              { title: "date-pickcer" },
+              { title: "example" },
               api.i18n.translate("welcome", {
                 target: root.createComponent(
                   Text,

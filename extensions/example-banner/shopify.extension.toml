@@ -6,8 +6,8 @@
 api_version = "2025-04"
 
 [[extensions]]
-name = "date-pickcer"
-handle = "date-pickcer"
+name = "example-banner"
+handle = "example-banner"
 type = "ui_extension"
 
 
