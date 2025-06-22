@@ -1,3 +1,19 @@
-# This toml file is used for production. Only edit this file if you have a need for it
-# When you add a production config, values will be auto-populated here
-# Read more at https://docs.gadget.dev/guides/plugins/shopify/advanced-topics/shopify-app-toml
+# Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
+
+client_id = "10a8926387f7ea9e09395b64b1f798c2"
+name = "woood"
+handle = "woood"
+application_url = "https://woood--production.gadget.app/api/shopify/install-or-render"
+embedded = true
+
+[webhooks]
+api_version = "2025-04"
+
+[auth]
+redirect_urls = ["https://woood--production.gadget.app/api/connections/auth/shopify/callback"]
+
+[pos]
+embedded = false
+
+[build]
+include_config_on_deploy = true

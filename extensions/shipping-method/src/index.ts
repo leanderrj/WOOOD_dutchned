@@ -7,6 +7,8 @@ import {
   Input,
 } from "../generated/api";
 
+const REFORMAT_SHIPPING_OPTION_NAMES = false;
+
 function formatTitle(title: string): string {
   const parts = title.split(" - ");
   const text = parts.length > 1 ? parts[1] : parts[0];
@@ -67,12 +69,12 @@ export function run(input: Input): FunctionResult {
       .filter(opt => opt.handle !== standardOption.handle)
       .map(opt => ({ hide: { deliveryOptionHandle: opt.handle } }));
 
-    console.log("Final operations for standard shipping:", JSON.stringify(operations, null, 2));
+    // console.log("Final operations for standard shipping:", JSON.stringify(operations, null, 2));
     return { operations };
   }
 
-  const formattedTitle = formatTitle(rawTitle);
-  console.log(`Raw title: '${rawTitle}', Formatted title: '${formattedTitle}'`);
+  const titleToSet = REFORMAT_SHIPPING_OPTION_NAMES ? formatTitle(rawTitle) : rawTitle;
+  console.log(`Raw title: '${rawTitle}', Title to set: '${titleToSet}'`);
 
   const placeholderToRename = allDeliveryOptions[0];
   console.log(`Using '${placeholderToRename.title}' as placeholder to rename.`);
@@ -80,7 +82,7 @@ export function run(input: Input): FunctionResult {
   const operations: any[] = [{
     rename: {
       deliveryOptionHandle: placeholderToRename.handle,
-      title: formattedTitle,
+      title: titleToSet,
     },
   }];
 
@@ -93,6 +95,6 @@ export function run(input: Input): FunctionResult {
     });
   }
 
-  console.log("Final operations:", JSON.stringify(operations, null, 2));
+  // console.log("Final operations:", JSON.stringify(operations, null, 2));
   return { operations };
 }
