@@ -1,0 +1,20 @@
+# Learn more about configuring your checkout UI extension:
+# https://shopify.dev/api/checkout-extensions/checkout/configuration
+
+# The version of APIs your extension is using.
+api_version = "2024-04"
+
+[[extensions]]
+type = "function"
+name = "shipping-method"
+handle = "shipping-method"
+description = "Filters shipping methods based on cart contents."
+
+[extensions.build]
+command = ""
+path = "dist/main.js"
+
+[[extensions.targeting]]
+target = "purchase.delivery-customization.run"
+input_query = "src/shipping_method_filter.graphql"
+export = "run"

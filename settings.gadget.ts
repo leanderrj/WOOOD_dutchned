@@ -18,6 +18,8 @@ export const settings: GadgetSettings = {
           "write_checkouts",
           "read_orders",
           "read_products",
+          "write_delivery_customizations",
+          "read_delivery_customizations",
         ],
       },
     },
