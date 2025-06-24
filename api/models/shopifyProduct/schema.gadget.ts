@@ -6,7 +6,19 @@ import type { GadgetModel } from "gadget-server";
 export const schema: GadgetModel = {
   type: "gadget/model-schema/v1",
   storageKey: "DataModel-Shopify-Product",
-  fields: {},
+  fields: {
+    shippingMethod2: {
+      type: "string",
+      shopifyMetafield: {
+        privateMetafield: false,
+        namespace: "custom",
+        key: "ShippingMethod2",
+        metafieldType: "single_line_text_field",
+        allowMultipleEntries: false,
+      },
+      storageKey: "Qi9KlM6EmrO9",
+    },
+  },
   shopify: {
     fields: [
       "body",

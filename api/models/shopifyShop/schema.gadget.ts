@@ -6,7 +6,14 @@ import type { GadgetModel } from "gadget-server";
 export const schema: GadgetModel = {
   type: "gadget/model-schema/v1",
   storageKey: "DataModel-Shopify-Shop",
-  fields: {},
+  fields: {
+    checkouts: {
+      type: "hasMany",
+      children: { model: "shopifyCheckout", belongsToField: null },
+      storageKey:
+        "ModelField-Shopify-Shop-Checkouts::FieldStorageEpoch-DataModel-Shopify-Shop-ModelField-Shopify-Shop-Checkouts-initial",
+    },
+  },
   shopify: {
     fields: [
       "address1",
@@ -15,7 +22,6 @@ export const schema: GadgetModel = {
       "billingAddress",
       "checkoutApiSupported",
       "checkoutLineItems",
-      "checkouts",
       "city",
       "countriesInShippingZones",
       "country",
@@ -52,6 +58,7 @@ export const schema: GadgetModel = {
       "name",
       "orderNumberFormatPrefix",
       "orderNumberFormatSuffix",
+      "orders",
       "passwordEnabled",
       "phone",
       "plan",

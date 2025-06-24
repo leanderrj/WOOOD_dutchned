@@ -12,17 +12,6 @@ export const permissions: GadgetPermissions = {
     "shopify-app-users": {
       storageKey: "Role-Shopify-App",
       models: {
-        shopifyCheckout: {
-          read: {
-            filter:
-              "accessControl/filters/shopify/shopifyCheckout.gelly",
-          },
-          actions: {
-            create: true,
-            delete: true,
-            update: true,
-          },
-        },
         shopifyCheckoutLineItem: {
           read: {
             filter:
@@ -41,6 +30,17 @@ export const permissions: GadgetPermissions = {
           },
           actions: {
             create: true,
+            update: true,
+          },
+        },
+        shopifyOrder: {
+          read: {
+            filter:
+              "accessControl/filters/shopify/shopifyOrder.gelly",
+          },
+          actions: {
+            create: true,
+            delete: true,
             update: true,
           },
         },

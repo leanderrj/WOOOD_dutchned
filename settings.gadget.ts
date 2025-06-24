@@ -7,19 +7,13 @@ export const settings: GadgetSettings = {
     connections: {
       shopify: {
         apiVersion: "2025-04",
-        enabledModels: [
-          "shopifyCheckout",
-          "shopifyCheckoutLineItem",
-          "shopifyProduct",
-        ],
+        enabledModels: ["shopifyOrder", "shopifyProduct"],
         type: "partner",
         scopes: [
-          "read_checkouts",
-          "write_checkouts",
-          "read_orders",
           "read_products",
+          "write_checkouts",
           "write_delivery_customizations",
-          "read_delivery_customizations",
+          "write_orders",
         ],
       },
     },

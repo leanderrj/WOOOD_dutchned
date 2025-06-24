@@ -11,6 +11,7 @@ import {
   BlockStack,
   useShippingAddress,
   useTranslate,
+  ScrollView,
 } from "@shopify/ui-extensions-react/checkout";
 import { Provider, useGlobalAction } from "@gadgetinc/react";
 import { api } from "../../../web/api";
@@ -64,7 +65,7 @@ function DeliveryDatePicker() {
       const dates = (deliveryDatesData as any).result || deliveryDatesData;
 
       if (Array.isArray(dates)) {
-        setAvailableDates(dates.slice(0, 8));
+        setAvailableDates(dates.slice(0, 20));
         setErrorKey(null);
       } else {
         console.error('Expected an array of dates, but received:', dates);
@@ -106,7 +107,6 @@ function DeliveryDatePicker() {
 
         {loading && (
           <BlockStack spacing="tight">
-            <Text appearance="subdued">{t('loading')}</Text>
             <SkeletonText />
             <SkeletonText />
             <SkeletonText />
@@ -121,33 +121,27 @@ function DeliveryDatePicker() {
 
         {!loading && !errorKey && availableDates.length > 0 && (
           <BlockStack spacing="base">
-            <Text appearance="subdued">{t('available_dates')}</Text>
+            <View>
+              <ScrollView maxBlockSize={300}>
+                <BlockStack spacing="tight">
+                  {availableDates.map((dateItem) => {
+                    const isSelected = selectedDate === dateItem.date;
+                    return (
+                      <Button
+                        key={dateItem.date}
+                        kind={isSelected ? 'primary' : 'secondary'}
+                        onPress={() => handleDateSelect(dateItem.date)}
+                      >
+                        <Text emphasis={isSelected ? "strong" : "base"}>
+                          {dateItem.displayName}
+                        </Text>
+                      </Button>
+                    );
+                  })}
+                </BlockStack>
+              </ScrollView>
+            </View>
 
-            <BlockStack spacing="tight">
-              {availableDates.map((dateItem) => {
-                const isSelected = selectedDate === dateItem.date;
-
-                return (
-                  <Button
-                    key={dateItem.date}
-                    kind={isSelected ? 'primary' : 'secondary'}
-                    onPress={() => handleDateSelect(dateItem.date)}
-                  >
-                    <Text emphasis={isSelected ? "strong" : "base"}>
-                      {dateItem.displayName}
-                    </Text>
-                  </Button>
-                );
-              })}
-            </BlockStack>
-
-            {selectedDate && (
-              <Banner status="success">
-                <Text>
-                  Bezorgdatum geselecteerd: {availableDates.find(d => d.date === selectedDate)?.displayName}
-                </Text>
-              </Banner>
-            )}
           </BlockStack>
         )}
 
