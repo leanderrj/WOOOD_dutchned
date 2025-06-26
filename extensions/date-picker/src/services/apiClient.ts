@@ -21,8 +21,8 @@ const DEFAULT_CONFIG: FetchConfig = {
 };
 
 export async function fetchDeliveryDates(config: FetchConfig = DEFAULT_CONFIG): Promise<DeliveryDate[]> {
-  const apiBaseUrl = 'https://your-backend.vercel.app'; // Replace with your actual backend URL
-  const enableMockMode = false; // Set to true for testing
+  const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000';
+  const enableMockMode = import.meta.env.VITE_ENABLE_MOCK_MODE === 'true';
   
   // If mock mode is enabled, return mock data immediately
   if (enableMockMode) {
@@ -55,14 +55,14 @@ export async function fetchDeliveryDates(config: FetchConfig = DEFAULT_CONFIG): 
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
 
-      const apiResponse: ApiResponse = await response.json();
+      const data: DeliveryDate[] = await response.json();
       
-      if (!apiResponse.success || !Array.isArray(apiResponse.data)) {
-        throw new Error('Invalid response format: expected successful response with delivery dates array');
+      if (!Array.isArray(data)) {
+        throw new Error('Invalid response format: expected array of delivery dates');
       }
 
-      console.log(`Successfully fetched ${apiResponse.data.length} delivery dates`);
-      return apiResponse.data;
+      console.log(`Successfully fetched ${data.length} delivery dates`);
+      return data;
       
     } catch (error: any) {
       console.error(`Attempt ${attempt} failed:`, error.message);
