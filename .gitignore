@@ -1,11 +1,52 @@
-.gadget/
+# Dependencies
 node_modules/
+**/node_modules/
+
+# Build outputs
+dist/
+build/
+**/dist/
+**/build/
+
+# Environment variables
+.env
+.env.*
+!.env.example
+
+# OS files
 **/.DS_Store
-.react-router/
+.DS_Store
+
+# Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
 
 # Shopify
 extensions/**/dist
-extensions/**/node_modules
 extensions/**/generated
 shopify.app.*.toml
-.env.*
+
+# Backend specific
+backend/dist/
+
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Runtime data
+pids
+*.pid
+*.seed
+*.pid.lock
+
+# Coverage directory used by tools like istanbul
+coverage/
+
+# Temporary folders
+tmp/
+temp/

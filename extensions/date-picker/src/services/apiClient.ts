@@ -21,8 +21,10 @@ const DEFAULT_CONFIG: FetchConfig = {
 };
 
 export async function fetchDeliveryDates(config: FetchConfig = DEFAULT_CONFIG): Promise<DeliveryDate[]> {
-  const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000';
-  const enableMockMode = import.meta.env.VITE_ENABLE_MOCK_MODE === 'true';
+  // For Shopify extensions, we'll use hardcoded values for now
+  // These can be configured via extension settings in production
+  const apiBaseUrl = 'https://woood-delivery-api.vercel.app';
+  const enableMockMode = false; // Can be enabled for testing
   
   // If mock mode is enabled, return mock data immediately
   if (enableMockMode) {

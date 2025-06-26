@@ -1,252 +1,572 @@
-# Deployment Guide
+# WOOOD Delivery Date Picker - Deployment Guide
 
-This guide covers the deployment of the WOOOD Delivery Date Picker application, which consists of a backend API proxy and Shopify checkout extensions.
+This guide covers the complete deployment process for the WOOOD Delivery Date Picker system, including backend API proxy, Shopify extensions, and production configuration.
 
-## Architecture Overview
+## Deployment Overview
 
-- **Backend**: Node.js Express server deployed on Vercel
-- **Frontend**: Shopify Checkout UI Extensions (date-picker and shipping-method)
-- **API Integration**: DutchNed delivery dates API with fallback to mock data
+The system consists of three deployable components:
+
+1. **Backend API Proxy** → Vercel (Node.js serverless)
+2. **Date Picker Extension** → Shopify App Store
+3. **Shipping Method Function** → Shopify Functions
 
 ## Prerequisites
 
-- Node.js 18+ installed
-- npm or yarn package manager
-- Shopify CLI installed (`npm install -g @shopify/cli`)
-- Vercel CLI installed (`npm install -g vercel`)
-- Access to Shopify Partner Dashboard
-- DutchNed API credentials
+Before deploying, ensure you have:
 
-## Backend Deployment (Vercel)
+- [ ] Node.js 18+ installed
+- [ ] Yarn package manager
+- [ ] Vercel CLI installed (`npm i -g vercel`)
+- [ ] Shopify CLI installed (`npm i -g @shopify/cli`)
+- [ ] Shopify Partner account with app created
+- [ ] DutchNed API credentials
+- [ ] Access to target Shopify store(s)
 
-### 1. Environment Variables
+## Environment Setup
 
-Set up the following environment variables in Vercel dashboard:
+### 1. Backend Environment Variables
+
+Create production environment variables for the backend:
 
 ```bash
-# API Configuration
+# DutchNed API Configuration
 DUTCHNED_API_URL=https://eekhoorn-connector.dutchned.com/api/delivery-dates/available
 DUTCHNED_API_CREDENTIALS=YmFzaWM6YmwyMzFBU1hDMDk1M0pL
-USE_MOCK_DELIVERY_DATES=false
 
-# Cache and Performance
+# API Configuration  
+USE_MOCK_DELIVERY_DATES=false
 CACHE_DURATION=300000
 API_TIMEOUT=10000
 MAX_RETRIES=3
 
-# CORS Configuration
-CORS_ORIGINS=https://shop.app,https://checkout.shopify.com,https://*.myshopify.com
-
-# Feature Flags
-ENABLE_SHIPPING_OPTION_CHANGES=true
-ENABLE_ORDER_METAFIELDS=true
-ENABLE_SHIPPING_METHOD_LOGGING=true
-
 # Server Configuration
 PORT=3000
 NODE_ENV=production
+CORS_ORIGINS=https://shop.app,https://checkout.shopify.com,*.myshopify.com
+
+# Feature Flags - Core Functionality
+ENABLE_CACHING=true
+ENABLE_DUTCHNED_API=true
+ENABLE_MOCK_FALLBACK=true
+ENABLE_SHIPPING_METHOD_PROCESSING=true
+
+# Feature Flags - Performance & Monitoring
+ENABLE_RATE_LIMITING=true
+ENABLE_PERFORMANCE_MONITORING=true
+ENABLE_REQUEST_LOGGING=true
+ENABLE_ERROR_TRACKING=true
+
+# Feature Flags - UI/UX
+ENABLE_DETAILED_ERROR_MESSAGES=false
+ENABLE_LOADING_STATES=true
+ENABLE_USER_FEEDBACK=true
+
+# Feature Flags - External Services
+ENABLE_EXTERNAL_ERROR_REPORTING=false
+ENABLE_ANALYTICS_TRACKING=false
+ENABLE_WEBHOOK_NOTIFICATIONS=false
+
+# Feature Flags - Debug & Development
+ENABLE_DEBUG_LOGGING=false
+ENABLE_VERBOSE_RESPONSES=false
+
+# Rate Limiting Configuration
+RATE_LIMIT_WINDOW_MS=900000
+RATE_LIMIT_MAX_REQUESTS=100
+RATE_LIMIT_SKIP_SUCCESSFUL_REQUESTS=false
+RATE_LIMIT_SKIP_FAILED_REQUESTS=false
 ```
 
-### 2. Deploy to Vercel
+### 2. Extension Environment Variables
+
+Create production environment variables for the date picker extension:
 
 ```bash
-# Navigate to backend directory
+# API Configuration
+VITE_API_BASE_URL=https://woood-delivery-api.vercel.app
+VITE_ENABLE_MOCK_MODE=false
+```
+
+## Backend Deployment (Vercel)
+
+### Step 1: Prepare Backend for Deployment
+
+1. **Navigate to backend directory:**
+```bash
 cd backend
+```
 
-# Login to Vercel (if not already logged in)
+2. **Install dependencies:**
+```bash
+yarn install
+```
+
+3. **Build and test locally:**
+```bash
+yarn build
+yarn start
+```
+
+4. **Test endpoints:**
+```bash
+curl http://localhost:3000/health
+curl http://localhost:3000/api/delivery-dates/available
+```
+
+### Step 2: Deploy to Vercel
+
+1. **Login to Vercel:**
+```bash
 vercel login
+```
 
-# Deploy to production
-vercel --prod
+2. **Deploy to staging:**
+```bash
+vercel deploy
+```
 
-# Set environment variables (alternative to dashboard)
+3. **Set environment variables:**
+```bash
+# Set all required environment variables
 vercel env add DUTCHNED_API_URL
 vercel env add DUTCHNED_API_CREDENTIALS
-# ... add all other variables
+vercel env add USE_MOCK_DELIVERY_DATES
+vercel env add CACHE_DURATION
+vercel env add API_TIMEOUT
+vercel env add MAX_RETRIES
+vercel env add NODE_ENV
+vercel env add CORS_ORIGINS
+# ... continue for all environment variables
 ```
 
-### 3. Verify Deployment
-
-Test the deployed backend:
-
+4. **Deploy to production:**
 ```bash
-# Health check
-curl https://your-backend.vercel.app/health
+vercel deploy --prod
+```
 
-# Test delivery dates endpoint
-curl https://your-backend.vercel.app/api/delivery-dates/available
+5. **Test production deployment:**
+```bash
+curl https://your-deployment-url.vercel.app/health
+curl https://your-deployment-url.vercel.app/api/delivery-dates/available
+```
 
-# Test shipping method endpoint
-curl -X POST https://your-backend.vercel.app/api/shipping-methods/process \
-  -H "Content-Type: application/json" \
-  -d '{"shippingMethod":"Test Method","timestamp":"2024-01-01T00:00:00Z"}'
+### Step 3: Configure Custom Domain (Optional)
+
+1. **Add custom domain in Vercel dashboard:**
+   - Go to Vercel dashboard → Project → Settings → Domains
+   - Add your custom domain (e.g., `woood-delivery-api.vercel.app`)
+   - Configure DNS records as instructed
+
+2. **Update CORS origins:**
+```bash
+vercel env add CORS_ORIGINS "https://shop.app,https://checkout.shopify.com,*.myshopify.com,https://your-custom-domain.com"
 ```
 
 ## Shopify Extensions Deployment
 
-### 1. Configure Extensions
+### Step 1: Prepare Shopify App
 
-Update the API base URL in both extensions:
-
+1. **Login to Shopify CLI:**
 ```bash
-# Date picker extension
+shopify auth login
+```
+
+2. **Navigate to project root:**
+```bash
+cd ..  # Back to project root
+```
+
+3. **Update extension configuration:**
+
+Update `extensions/date-picker/.env`:
+```bash
+VITE_API_BASE_URL=https://your-production-backend.vercel.app
+VITE_ENABLE_MOCK_MODE=false
+```
+
+### Step 2: Build and Test Extensions
+
+1. **Build all extensions:**
+```bash
+yarn build
+```
+
+2. **Test date picker extension:**
+```bash
 cd extensions/date-picker
-echo "VITE_API_BASE_URL=https://your-backend.vercel.app" > .env
-echo "VITE_ENABLE_MOCK_MODE=false" >> .env
+yarn build
+shopify app dev
+```
 
-# Shipping method extension (if needed)
+3. **Test shipping method function:**
+```bash
 cd ../shipping-method
-# No environment variables needed for this extension
+yarn build
+shopify app function run
 ```
 
-### 2. Build Extensions
+### Step 3: Deploy Extensions
 
+1. **Deploy all extensions:**
 ```bash
-# From project root
-npm run build:extensions
-
-# Or individually
-npm run build:date-picker
-npm run build:shipping-method
+cd ../..  # Back to project root
+shopify app deploy
 ```
 
-### 3. Deploy to Shopify
+2. **Confirm deployment:**
+   - Follow CLI prompts to confirm deployment
+   - Note the extension IDs provided after successful deployment
 
+### Step 4: Configure Extensions in Shopify Admin
+
+#### Date Picker Extension Configuration
+
+1. **Access Shopify Admin:**
+   - Go to your Shopify store admin
+   - Navigate to Settings → Checkout
+
+2. **Enable Date Picker Extension:**
+   - Find "Date Picker for Delivery Dates" in checkout extensions
+   - Enable the extension
+   - Configure extension settings:
+     - API Base URL: `https://your-production-backend.vercel.app`
+     - Mock Mode: Disabled
+
+3. **Test in checkout:**
+   - Create a test order with Netherlands shipping address
+   - Verify date picker appears and functions correctly
+
+#### Shipping Method Function Configuration
+
+1. **Install Shipping Method Function:**
+   - Go to Settings → Shipping and delivery
+   - Navigate to Shipping functions
+   - Install "WOOOD Shipping Method Filter"
+
+2. **Configure Shipping Zones:**
+   - Create shipping rate named "WOOOD Standard"
+   - Set handle to `woood-standard`
+   - Configure pricing as needed
+
+3. **Test shipping method filtering:**
+   - Add products with `custom.ShippingMethod2` metafields to cart
+   - Verify shipping options are filtered correctly
+
+## Post-Deployment Configuration
+
+### 1. Shopify Store Configuration
+
+#### Required Metafields
+
+Ensure the following product metafields are configured:
+
+```json
+{
+  "namespace": "custom",
+  "key": "ShippingMethod2", 
+  "type": "single_line_text_field",
+  "name": "Shipping Method Priority",
+  "description": "Shipping method with priority (e.g., '32 - EXPEDITIE 2-MANS')"
+}
+```
+
+#### Shipping Zone Setup
+
+1. **Create shipping zones for Netherlands:**
+   - Go to Settings → Shipping and delivery
+   - Create zone for Netherlands
+   - Add shipping rate "WOOOD Standard" with handle `woood-standard`
+
+2. **Configure shipping rates:**
+   - Set appropriate pricing for base rate
+   - Function will dynamically rename and reprice based on cart contents
+
+### 2. Monitoring and Alerts
+
+#### Vercel Monitoring
+
+1. **Enable Vercel Analytics:**
+   - Go to Vercel dashboard → Project → Analytics
+   - Enable Web Analytics and Speed Insights
+
+2. **Set up monitoring alerts:**
+   - Configure alerts for high error rates
+   - Set up alerts for response time degradation
+   - Monitor API usage and rate limiting
+
+#### Shopify Function Monitoring
+
+1. **Monitor function execution:**
+   - Go to Shopify Admin → Apps → Functions
+   - Monitor execution logs and error rates
+   - Set up alerts for function failures
+
+### 3. Performance Optimization
+
+#### Backend Optimization
+
+1. **Enable caching:**
 ```bash
-# Deploy to development first
-npm run shopify:deploy:development
-
-# Deploy to production
-npm run shopify:deploy:production
+ENABLE_CACHING=true
+CACHE_DURATION=300000  # 5 minutes
 ```
 
-### 4. Configure Extension Settings
-
-In the Shopify Partner Dashboard:
-
-1. Navigate to your app
-2. Go to Extensions section
-3. Configure the date-picker extension settings:
-   - **API Base URL**: `https://your-backend.vercel.app`
-   - **Enable Mock Mode**: `false` (for production)
-
-## Testing Deployment
-
-### 1. Backend API Tests
-
+2. **Configure rate limiting:**
 ```bash
-# Test all endpoints
-curl -f https://your-backend.vercel.app/health
-curl -f https://your-backend.vercel.app/api/delivery-dates/available
-curl -X POST -f https://your-backend.vercel.app/api/shipping-methods/process \
-  -H "Content-Type: application/json" \
-  -d '{"shippingMethod":"Standard","timestamp":"2024-01-01T00:00:00Z"}'
+ENABLE_RATE_LIMITING=true
+RATE_LIMIT_WINDOW_MS=900000  # 15 minutes
+RATE_LIMIT_MAX_REQUESTS=100
 ```
 
-### 2. Extension Tests
-
-1. Install the app in a development store
-2. Navigate to checkout with Netherlands address
-3. Verify date picker appears after shipping options
-4. Test date selection and cart attribute saving
-5. Test shipping method filtering based on product metafields
-
-### 3. End-to-End Tests
-
-1. Add products with shipping method metafields to cart
-2. Proceed to checkout with Netherlands address
-3. Verify correct shipping methods are shown/hidden
-4. Select delivery date
-5. Complete checkout
-6. Verify order metafields are saved
-
-## Monitoring and Maintenance
-
-### Backend Monitoring
-
-- Monitor Vercel function logs
-- Set up alerts for API failures
-- Monitor DutchNed API availability
-- Track response times and error rates
-
-### Extension Monitoring
-
-- Monitor Shopify app analytics
-- Track extension usage and errors
-- Monitor cart attribute and order metafield data
-
-### Health Checks
-
-Set up automated health checks:
-
+3. **Enable performance monitoring:**
 ```bash
-# Create a monitoring script
-#!/bin/bash
-curl -f https://your-backend.vercel.app/health || exit 1
-curl -f https://your-backend.vercel.app/api/delivery-dates/available || exit 1
+ENABLE_PERFORMANCE_MONITORING=true
+ENABLE_REQUEST_LOGGING=true
 ```
+
+#### Frontend Optimization
+
+1. **Minimize bundle size:**
+   - Extensions are automatically optimized by Shopify
+   - Ensure only necessary dependencies are included
+
+2. **Enable error tracking:**
+   - Frontend errors are automatically sent to backend `/api/errors/track`
+   - Monitor error rates in backend logs
+
+## Testing and Validation
+
+### 1. End-to-End Testing
+
+#### Test Scenarios
+
+1. **Netherlands Address with Date Picker:**
+   - Set shipping address to Netherlands
+   - Verify date picker appears
+   - Select delivery date
+   - Complete checkout
+   - Verify date saved as cart attribute
+
+2. **Non-Netherlands Address:**
+   - Set shipping address to other country
+   - Verify date picker does not appear
+   - Complete checkout normally
+
+3. **Shipping Method Filtering:**
+   - Add product with `custom.ShippingMethod2` metafield
+   - Verify shipping options are filtered
+   - Verify correct shipping method is selected
+   - Complete checkout
+   - Verify shipping method saved as order metafield
+
+4. **API Fallback Testing:**
+   - Temporarily disable DutchNed API
+   - Verify fallback dates are generated
+   - Verify checkout process continues normally
+
+### 2. Performance Testing
+
+#### Load Testing
+
+1. **Backend API load testing:**
+```bash
+# Install artillery for load testing
+npm install -g artillery
+
+# Create load test configuration
+cat > load-test.yml << EOF
+config:
+  target: 'https://your-backend.vercel.app'
+  phases:
+    - duration: 60
+      arrivalRate: 10
+scenarios:
+  - name: 'Test delivery dates API'
+    requests:
+      - get:
+          url: '/api/delivery-dates/available'
+      - get:
+          url: '/health'
+EOF
+
+# Run load test
+artillery run load-test.yml
+```
+
+2. **Monitor performance:**
+   - Check response times under load
+   - Verify caching is working effectively
+   - Monitor error rates during high traffic
+
+### 3. Security Testing
+
+#### Security Checklist
+
+- [ ] API credentials are stored as environment variables
+- [ ] CORS is configured for Shopify domains only
+- [ ] Rate limiting is enabled and configured
+- [ ] HTTPS is enforced for all API communication
+- [ ] Input validation is working for all endpoints
+- [ ] Error messages don't expose sensitive information
 
 ## Rollback Procedures
 
 ### Backend Rollback
 
+1. **Rollback to previous Vercel deployment:**
 ```bash
-# Rollback to previous deployment
-vercel --prod --rollback
+vercel rollback
+```
+
+2. **Or deploy specific version:**
+```bash
+vercel deploy --prod --force
 ```
 
 ### Extension Rollback
 
+1. **Disable extensions in Shopify Admin:**
+   - Go to Settings → Checkout
+   - Disable problematic extensions
+
+2. **Deploy previous version:**
 ```bash
-# Redeploy previous version
-git checkout previous-version
-npm run shopify:deploy:production
+git checkout previous-working-commit
+shopify app deploy
 ```
 
-## Troubleshooting
+## Maintenance and Updates
 
-### Common Issues
+### Regular Maintenance Tasks
 
-1. **CORS Errors**: Verify CORS_ORIGINS environment variable includes your shop domain
-2. **API Timeouts**: Check DutchNed API availability and increase API_TIMEOUT if needed
-3. **Extension Not Loading**: Verify API base URL is correct and backend is accessible
-4. **Mock Data Fallback**: Check if USE_MOCK_DELIVERY_DATES is set correctly
+1. **Weekly:**
+   - Review error logs in Vercel dashboard
+   - Check Shopify function execution logs
+   - Monitor API response times and error rates
 
-### Debug Mode
+2. **Monthly:**
+   - Review and update dependencies
+   - Check for Shopify API updates
+   - Review and optimize feature flag configurations
 
-Enable debug logging by setting environment variables:
+3. **Quarterly:**
+   - Performance review and optimization
+   - Security audit and updates
+   - Documentation updates
 
+### Update Procedures
+
+1. **Backend Updates:**
 ```bash
-ENABLE_SHIPPING_METHOD_LOGGING=true
-USE_MOCK_DELIVERY_DATES=true  # For testing
+cd backend
+yarn update
+yarn build
+yarn test
+vercel deploy --prod
 ```
 
-### Log Analysis
-
-Check Vercel function logs:
-
+2. **Extension Updates:**
 ```bash
-vercel logs --follow
+cd extensions/date-picker
+yarn update
+yarn build
+cd ../shipping-method
+yarn update
+yarn build
+cd ../..
+shopify app deploy
 ```
 
-## Security Considerations
+## Troubleshooting Common Issues
 
-1. **API Credentials**: Store securely in Vercel environment variables
-2. **CORS Configuration**: Restrict to necessary domains only
-3. **Rate Limiting**: Consider implementing rate limiting for production
-4. **HTTPS**: Ensure all communications use HTTPS
-5. **Input Validation**: Backend validates all incoming requests
+### Deployment Issues
 
-## Performance Optimization
+1. **Vercel deployment fails:**
+   - Check build logs for errors
+   - Verify all environment variables are set
+   - Check for TypeScript compilation errors
 
-1. **Caching**: 5-minute cache for delivery dates API
-2. **Compression**: Vercel automatically compresses responses
-3. **CDN**: Vercel provides global CDN for fast response times
-4. **Bundle Size**: Extensions are optimized for minimal bundle size
+2. **Extension deployment fails:**
+   - Verify Shopify CLI is authenticated
+   - Check extension configuration files
+   - Ensure all required permissions are granted
 
-## Scaling Considerations
+3. **CORS errors in production:**
+   - Verify CORS_ORIGINS includes all necessary domains
+   - Check for typos in domain names
+   - Ensure wildcard patterns are correctly formatted
 
-1. **Vercel Limits**: Monitor function execution time and memory usage
-2. **API Rate Limits**: Respect DutchNed API rate limits
-3. **Concurrent Requests**: Backend handles concurrent requests efficiently
-4. **Database**: Consider external database for persistent storage if needed 
+### Runtime Issues
+
+1. **Date picker not appearing:**
+   - Verify customer address is Netherlands
+   - Check browser console for errors
+   - Verify extension is enabled in Shopify Admin
+
+2. **API timeout errors:**
+   - Check backend deployment status
+   - Verify DutchNed API credentials
+   - Enable mock mode as temporary fix
+
+3. **Shipping method not filtering:**
+   - Verify "WOOOD Standard" rate exists
+   - Check product metafields are set correctly
+   - Review function execution logs
+
+## Support and Escalation
+
+### Support Contacts
+
+- **Technical Issues:** Development team
+- **Shopify Issues:** Shopify Partner support
+- **Vercel Issues:** Vercel support
+- **DutchNed API Issues:** DutchNed support team
+
+### Escalation Procedures
+
+1. **Level 1:** Check logs and documentation
+2. **Level 2:** Enable debug mode and gather detailed logs
+3. **Level 3:** Contact appropriate support team with:
+   - Error messages and logs
+   - Steps to reproduce
+   - Environment details
+   - Impact assessment
+
+---
+
+## Deployment Checklist
+
+### Pre-Deployment
+
+- [ ] All tests pass locally
+- [ ] Environment variables configured
+- [ ] Dependencies updated and secure
+- [ ] Documentation updated
+- [ ] Backup procedures tested
+
+### Deployment
+
+- [ ] Backend deployed to Vercel
+- [ ] Environment variables set in production
+- [ ] Extensions deployed to Shopify
+- [ ] Extensions configured in Shopify Admin
+- [ ] Shipping zones configured correctly
+
+### Post-Deployment
+
+- [ ] End-to-end testing completed
+- [ ] Performance monitoring enabled
+- [ ] Error tracking configured
+- [ ] Rollback procedures tested
+- [ ] Team notified of deployment
+
+### Go-Live
+
+- [ ] Production testing with real orders
+- [ ] Monitor error rates and performance
+- [ ] Customer support team briefed
+- [ ] Documentation accessible to support team
+
+---
+
+This deployment guide ensures a smooth and reliable deployment of the WOOOD Delivery Date Picker system to production environments. 
