@@ -48,7 +48,7 @@ network_access = true
 key = "api_base_url"
 type = "single_line_text_field"
 name = "API Base URL"
-description = "Base URL for the delivery dates API (e.g., https://your-backend.vercel.app)"
+description = "Base URL for the delivery dates API (e.g., https://api.woood-delivery.com)"
 
 [[extensions.settings.fields]]
 key = "enable_mock_mode"

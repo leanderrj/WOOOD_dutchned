@@ -258,7 +258,7 @@ A Shopify Checkout UI Extension that:
 
 ```bash
 # API Configuration
-VITE_API_BASE_URL=https://your-backend.vercel.app
+VITE_API_BASE_URL=https://api.woood-delivery.com
 VITE_ENABLE_MOCK_MODE=false
 ```
 
@@ -502,10 +502,10 @@ Monitor system health:
 
 ```bash
 # Backend health
-curl https://your-backend.vercel.app/health
+curl https://api.woood-delivery.com/health
 
 # Check API endpoints
-curl https://your-backend.vercel.app/api/delivery-dates/available
+curl https://api.woood-delivery.com/api/delivery-dates/available
 ```
 
 ### Logs and Monitoring
