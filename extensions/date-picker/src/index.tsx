@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   reactExtension,
   useApplyAttributeChange,
@@ -11,55 +11,91 @@ import {
   BlockStack,
   useShippingAddress,
   useTranslate,
-  useDeliveryGroups,
   ScrollView,
-  DatePicker,
+  useDeliveryGroups,
 } from "@shopify/ui-extensions-react/checkout";
-import { Provider, useGlobalAction } from "@gadgetinc/react";
-import { api } from "../../../web/api";
+import { fetchDeliveryDates, DeliveryDate } from "./services/apiClient";
+import { ErrorBoundary, useErrorHandler } from "./components/ErrorBoundary";
 
 export default reactExtension(
   "purchase.checkout.shipping-option-list.render-after",
   () => (
-    <Provider api={api}>
+    <ErrorBoundary>
       <DeliveryDatePicker />
-    </Provider>
+    </ErrorBoundary>
   )
 );
 
-interface DateItem {
-  date: string;
-  displayName: string;
+interface UseFetchState<T> {
+  data: T | null;
+  loading: boolean;
+  error: string | null;
+}
+
+function useFetch<T>(fetchFn: () => Promise<T>, deps: any[] = []): [UseFetchState<T>, () => void] {
+  const [state, setState] = useState<UseFetchState<T>>({
+    data: null,
+    loading: false,
+    error: null,
+  });
+
+  const execute = useCallback(async () => {
+    setState(prev => ({ ...prev, loading: true, error: null }));
+    
+    try {
+      const result = await fetchFn();
+      setState({ data: result, loading: false, error: null });
+    } catch (error: any) {
+      setState({ data: null, loading: false, error: error.message || 'An error occurred' });
+    }
+  }, deps);
+
+  return [state, execute];
 }
 
 function DeliveryDatePicker() {
-  const [errorKey, setErrorKey] = useState < string | null > (null);
-  const [availableDates, setAvailableDates] = useState < DateItem[] > ([]);
-  const [selectedDate, setSelectedDate] = useState < string | undefined > ();
+  const [errorKey, setErrorKey] = useState<string | null>(null);
+  const [availableDates, setAvailableDates] = useState<DeliveryDate[]>([]);
+  const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  const [selectedShippingMethod, setSelectedShippingMethod] = useState<string | null>(null);
   const shippingAddress = useShippingAddress();
-  const t = useTranslate();
   const deliveryGroups = useDeliveryGroups();
+  const t = useTranslate();
 
   const applyAttributeChange = useApplyAttributeChange();
-  const [{ data: deliveryDatesData, fetching: loading, error: fetchError }, fetchDeliveryDates] = useGlobalAction(api.getDeliveryDates);
+  const [{ data: deliveryDatesData, loading, error: fetchError }, fetchDeliveryDatesAction] = useFetch(fetchDeliveryDates);
 
   // Show the date picker only for Netherlands
   const countryCode = shippingAddress?.countryCode;
   const showDatePicker = countryCode === 'NL';
 
-  // Determine if shipping options have been loaded
-  const shippingOptionsLoaded = deliveryGroups.length > 0 && deliveryGroups.some(group => group.deliveryOptions.length > 0);
+  // Detect selected shipping method from delivery groups
+  useEffect(() => {
+    if (deliveryGroups && deliveryGroups.length > 0) {
+      for (const group of deliveryGroups) {
+        // Get the selected delivery option handle
+        const selectedOption = group.selectedDeliveryOption;
+        if (selectedOption) {
+          const shippingMethodName = selectedOption.handle || 'Unknown';
+          setSelectedShippingMethod(shippingMethodName);
+          
+          // Save shipping method as attribute
+          handleShippingMethodSave(shippingMethodName);
+          break;
+        }
+      }
+    }
+  }, [deliveryGroups]);
 
   useEffect(() => {
-    if (showDatePicker && shippingOptionsLoaded) {
-      fetchDeliveryDates();
+    if (showDatePicker) {
+      fetchDeliveryDatesAction();
     } else {
       setAvailableDates([]);
-      setSelectedDate(undefined);
+      setSelectedDate(null);
       setErrorKey(null);
     }
-  }, [showDatePicker, shippingOptionsLoaded, fetchDeliveryDates]);
-
+  }, [showDatePicker, fetchDeliveryDatesAction]);
 
   useEffect(() => {
     if (fetchError) {
@@ -67,63 +103,16 @@ function DeliveryDatePicker() {
       setErrorKey('error_loading');
       setAvailableDates([]);
     } else if (deliveryDatesData) {
-      // Gadget actions can return the result in a `result` property, or return the result directly.
-      const dates = (deliveryDatesData as any).result || deliveryDatesData;
-
-      if (Array.isArray(dates)) {
-        setAvailableDates(dates);
+      if (Array.isArray(deliveryDatesData)) {
+        setAvailableDates(deliveryDatesData.slice(0, 20));
         setErrorKey(null);
       } else {
-        console.error('Expected an array of dates, but received:', dates);
+        console.error('Expected an array of dates, but received:', deliveryDatesData);
         setErrorKey('error_unexpected_data');
         setAvailableDates([]);
       }
     }
   }, [deliveryDatesData, fetchError]);
-
-  const disabledDates = useMemo(() => {
-    if (availableDates.length === 0) {
-      return true;
-    }
-
-    // It's safer to sort them client-side in case the API doesn't guarantee order.
-    const sortedAvailable = [...availableDates].sort((a, b) =>
-      a.date.localeCompare(b.date)
-    );
-
-    const availableDateSet = new Set(sortedAvailable.map(d => d.date));
-    const firstAvailable = sortedAvailable[0].date;
-    const lastAvailable = sortedAvailable[sortedAvailable.length - 1].date;
-
-    const shiftDate = (dateStr: string, days: number) => {
-      // Use Z to indicate UTC and avoid timezone pitfalls
-      const date = new Date(`${dateStr}T00:00:00Z`);
-      date.setUTCDate(date.getUTCDate() + days);
-      return date.toISOString().split('T')[0];
-    };
-
-    const disabled: (string | {start?: string, end?: string})[] = [];
-
-    // Disable all dates before the first available one.
-    disabled.push({ end: shiftDate(firstAvailable, -1) });
-
-    // Disable all dates after the last available one.
-    disabled.push({ start: shiftDate(lastAvailable, 1) });
-
-    // Find the gaps between the first and last available dates and disable them.
-    let currentDate = new Date(`${firstAvailable}T00:00:00Z`);
-    const lastDate = new Date(`${lastAvailable}T00:00:00Z`);
-
-    while (currentDate <= lastDate) {
-      const currentDateString = currentDate.toISOString().split('T')[0];
-      if (!availableDateSet.has(currentDateString)) {
-        disabled.push(currentDateString);
-      }
-      currentDate.setUTCDate(currentDate.getUTCDate() + 1);
-    }
-
-    return disabled;
-  }, [availableDates]);
 
   const handleDateSelect = async (dateString: string) => {
     setSelectedDate(dateString);
@@ -136,59 +125,121 @@ function DeliveryDatePicker() {
       });
 
       if (result.type === 'error') {
-        throw new Error('Failed to save attribute');
+        throw new Error('Failed to save delivery date attribute');
       }
+
+      // Also save to backend for order metafield processing
+      await saveDeliveryAndShippingInfo(dateString, selectedShippingMethod);
+      
     } catch (err) {
       console.error('Error saving delivery date:', err);
       setErrorKey('error_saving');
     }
   };
 
-  if (!showDatePicker || !shippingOptionsLoaded) {
+  const handleShippingMethodSave = async (shippingMethod: string) => {
+    try {
+      const result = await applyAttributeChange({
+        type: 'updateAttribute',
+        key: 'shippingMethod',
+        value: shippingMethod,
+      });
+
+      if (result.type === 'error') {
+        throw new Error('Failed to save shipping method attribute');
+      }
+    } catch (err) {
+      console.error('Error saving shipping method:', err);
+      setErrorKey('error_saving_shipping');
+    }
+  };
+
+  const saveDeliveryAndShippingInfo = async (deliveryDate: string, shippingMethod: string | null) => {
+    try {
+      // For now, we'll use a placeholder URL - this will be configured during deployment
+      const apiBaseUrl = 'http://localhost:3000';
+      const response = await fetch(`${apiBaseUrl}/api/order-metafields/save`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          deliveryDate,
+          shippingMethod,
+          timestamp: new Date().toISOString(),
+        }),
+      });
+
+      if (!response.ok) {
+        console.warn('Failed to save to backend, but cart attributes were saved');
+      }
+    } catch (error) {
+      console.warn('Backend save failed, but cart attributes were saved:', error);
+    }
+  };
+
+  if (!showDatePicker) {
     return null;
   }
 
   return (
-    <BlockStack inlineAlignment="center">
-      <View border="base" cornerRadius="base" padding="base" maxInlineSize={320}>
-        <BlockStack spacing="base">
-          <Heading level={2}>{t('title')}</Heading>
+    <View border="base" cornerRadius="base" padding="base">
+      <BlockStack spacing="base">
+        <Heading level={2}>{t('title')}</Heading>
 
+        {selectedShippingMethod && (
+          <View>
+            <Text size="small" appearance="subdued">
+              {t('selected_shipping_method', { method: selectedShippingMethod })}
+            </Text>
+          </View>
+        )}
 
-          {loading && (
-            <BlockStack spacing="tight">
-              <Text appearance="subdued">{t('loading')}</Text>
-              <SkeletonText />
-              <SkeletonText />
-              <SkeletonText />
-            </BlockStack>
-          )}
+        {loading && (
+          <BlockStack spacing="tight">
+            <SkeletonText />
+            <SkeletonText />
+            <SkeletonText />
+          </BlockStack>
+        )}
 
-          {errorKey && (
-            <Banner status="critical">
-              <Text>{t(errorKey)}</Text>
-            </Banner>
-          )}
+        {errorKey && (
+          <Banner status="critical">
+            <Text>{t(errorKey)}</Text>
+          </Banner>
+        )}
 
-          {!loading && !errorKey && availableDates.length > 0 && (
-            <DatePicker
-              selected={selectedDate}
-              onChange={(selection: string | { start: string; end: string; }) => {
-                if (typeof selection === 'string') {
-                  handleDateSelect(selection);
-                }
-              }}
-              disabled={disabledDates}
-            />
-          )}
+        {!loading && !errorKey && availableDates.length > 0 && (
+          <BlockStack spacing="base">
+            <View>
+              <ScrollView maxBlockSize={300}>
+                <BlockStack spacing="tight">
+                  {availableDates.map((dateItem) => {
+                    const isSelected = selectedDate === dateItem.date;
+                    return (
+                      <Button
+                        key={dateItem.date}
+                        kind={isSelected ? 'primary' : 'secondary'}
+                        onPress={() => handleDateSelect(dateItem.date)}
+                      >
+                        <Text emphasis={isSelected ? "bold" : undefined}>
+                          {dateItem.displayName}
+                        </Text>
+                      </Button>
+                    );
+                  })}
+                </BlockStack>
+              </ScrollView>
+            </View>
+          </BlockStack>
+        )}
 
-          {!loading && !errorKey && availableDates.length === 0 && (
-            <Banner status="info">
-              <Text>{t('no_dates_available')}</Text>
-            </Banner>
-          )}
-        </BlockStack>
-      </View>
-    </BlockStack>
+        {!loading && !errorKey && availableDates.length === 0 && (
+          <Banner status="info">
+            <Text>{t('no_dates_available')}</Text>
+          </Banner>
+        )}
+      </BlockStack>
+    </View>
   );
 }
