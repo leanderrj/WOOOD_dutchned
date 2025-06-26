@@ -2,19 +2,12 @@
 name = "woood"
 handle = "woood"
 client_id = "10a8926387f7ea9e09395b64b1f798c2"
-application_url = "https://woood--production.gadget.app/"
+application_url = "https://woood.gadget.app/api/shopify/install-or-render"
 embedded = true
-
-[build]
-automatically_update_urls_on_dev = true
-dev_store_url = "webfluencer-panda.myshopify.com"
 include_config_on_deploy = true
 
 [auth]
-redirect_urls = [
-  "https://woood--production.gadget.app/auth/shopify/callback",
-  "https://woood--production.gadget.app/api/auth/shopify/callback"
-]
+redirect_urls = ["https://woood.gadget.app/api/connections/auth/shopify/callback"]
 
 [webhooks]
 api_version = "2025-04"
@@ -23,12 +16,15 @@ api_version = "2025-04"
 embedded = false
 
 [access_scopes]
-scopes = "read_checkouts,write_checkouts,read_orders,read_products,write_delivery_customizations,read_delivery_customizations"
+scopes = "read_checkouts,write_checkouts,read_orders,write_orders,read_products,write_delivery_customizations,read_delivery_customizations"
 
 [app_preferences]
-url = "https://woood--production.gadget.app/preferences"
+url = "https://woood.gadget.app/preferences"
 
 [app_proxy]
-url = "https://woood--production.gadget.app/proxy"
+url = "https://woood.gadget.app/proxy"
 subpath = "apps"
 prefix = "a"
+
+[build]
+include_config_on_deploy = true

@@ -20,12 +20,23 @@
     "moduleResolution": "Bundler",
     "resolveJsonModule": true,
     "baseUrl": ".",
+    "paths": {
+      "@/*": ["./backend/src/*"],
+      "@extensions/*": ["./extensions/*"]
+    },
     "types": [
-      "@shopify/app-bridge-types"
+      "@shopify/ui-extensions",
+      "@types/node"
     ]
   },
+  "include": [
+    "backend/src/**/*",
+    "extensions/**/*"
+  ],
   "exclude": [
     "node_modules",
-    ".gadget"
+    "backend/dist",
+    "extensions/**/node_modules",
+    "extensions/**/dist"
   ]
 }
