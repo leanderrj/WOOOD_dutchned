@@ -67,7 +67,7 @@ TTL: Auto
 Type: CNAME
 Name: staging-api
 Content: woood-delivery-api-staging.workers.dev
-Proxy Status: ✅ Proxied (Orange Cloud)  
+Proxy Status: ✅ Proxied (Orange Cloud)
 TTL: Auto
 ```
 
@@ -93,7 +93,7 @@ curl -X POST "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records" \
   -H "Authorization: Bearer YOUR_API_TOKEN" \
   -H "Content-Type: application/json" \
   --data '{
-    "type": "CNAME", 
+    "type": "CNAME",
     "name": "staging-api",
     "content": "woood-delivery-api-staging.workers.dev",
     "proxied": true
@@ -124,7 +124,7 @@ The routes are already configured in `wrangler.toml`:
 pattern = "api.woood-delivery.com/*"
 zone_name = "woood-delivery.com"
 
-# Staging routes  
+# Staging routes
 [[env.staging.routes]]
 pattern = "staging-api.woood-delivery.com/*"
 zone_name = "woood-delivery.com"
@@ -190,7 +190,7 @@ Cloudflare automatically provides Universal SSL certificates for custom domains:
 # Test production API
 curl -v https://api.woood-delivery.com/health
 
-# Test staging API  
+# Test staging API
 curl -v https://staging-api.woood-delivery.com/health
 
 # Test delivery dates endpoint
@@ -233,7 +233,7 @@ enabled = true
 head_sampling_rate = 0.01
 
 [[env.production.analytics_engine_datasets.bindings]]
-name = "WORKER_ANALYTICS"  
+name = "WORKER_ANALYTICS"
 dataset = "woood_delivery_analytics_prod"
 ```
 
@@ -258,7 +258,7 @@ Error Rate Alert:
   - Notification: Email, Slack
 
 Response Time Alert:
-  - Condition: 95th percentile > 1000ms  
+  - Condition: 95th percentile > 1000ms
   - Duration: 5 minutes
   - Notification: Email, PagerDuty
 
@@ -277,7 +277,7 @@ Request Volume Alert:
 ./scripts/health-check.sh production
 ./scripts/health-check.sh staging
 
-# Monthly SSL certificate checks  
+# Monthly SSL certificate checks
 ./scripts/ssl-check.sh api.woood-delivery.com
 ./scripts/ssl-check.sh staging-api.woood-delivery.com
 ```
@@ -323,7 +323,7 @@ openssl s_client -connect api.woood-delivery.com:443 -showcerts
 # Verify route configuration
 wrangler routes list --env production
 
-# Check worker deployment  
+# Check worker deployment
 wrangler status --env production
 
 # Test worker directly
@@ -381,7 +381,7 @@ curl -H "Origin: https://checkout.shopify.com" \
 ## Support Contacts
 
 - **Cloudflare Support**: support.cloudflare.com
-- **DNS Issues**: dns-team@company.com  
+- **DNS Issues**: dns-team@company.com
 - **Security Issues**: security@company.com
 - **Emergency Contact**: on-call@company.com
 
@@ -389,4 +389,4 @@ curl -H "Origin: https://checkout.shopify.com" \
 
 **Last Updated**: January 2024
 **Version**: 1.0
-**Next Review**: March 2024 
+**Next Review**: March 2024
