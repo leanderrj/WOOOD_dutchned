@@ -4,104 +4,11 @@ import { handleDeliveryDates } from './handlers/deliveryDates';
 import { handleShippingMethods } from './handlers/shippingMethods';
 import { handleOrderMetafields } from './handlers/orderMetafields';
 import { handleErrorTracking } from './handlers/errorTracking';
-import { WorkersLogger } from './utils/logger';
+import { createLogger } from './utils/logger';
+import { createFeatureFlagsService } from './services/featureFlagsService';
+import { createRateLimitingService, RateLimiter } from './services/rateLimitingService';
 
-/**
- * RateLimiter Durable Object class
- * Enhanced implementation for rate limiting functionality
- */
-export class RateLimiter {
-  constructor(private state: DurableObjectState, private env: Env) {}
 
-  async fetch(request: Request): Promise<Response> {
-    const url = new URL(request.url);
-    const clientId = this.getClientId(request);
-    const currentTime = Date.now();
-    const windowMs = 15 * 60 * 1000; // 15 minutes
-    const limit = 100; // 100 requests per window
-    const windowStart = currentTime - windowMs;
-
-    try {
-      // Get request history from Durable Object storage
-      const requests = await this.state.storage.get<number[]>(clientId) || [];
-
-      // Filter requests within current window
-      const recentRequests = requests.filter(time => time > windowStart);
-
-      // Check if limit exceeded
-      if (recentRequests.length >= limit) {
-        return new Response(JSON.stringify({
-          allowed: false,
-          limit,
-          remaining: 0,
-          resetTime: windowStart + windowMs,
-          retryAfter: Math.ceil((windowStart + windowMs - currentTime) / 1000)
-        }), {
-          status: 429,
-          headers: {
-            'Content-Type': 'application/json',
-            'X-RateLimit-Limit': limit.toString(),
-            'X-RateLimit-Remaining': '0',
-            'X-RateLimit-Reset': Math.ceil((windowStart + windowMs) / 1000).toString(),
-            'Retry-After': Math.ceil((windowStart + windowMs - currentTime) / 1000).toString()
-          }
-        });
-      }
-
-      // Add current request and save
-      recentRequests.push(currentTime);
-      await this.state.storage.put(clientId, recentRequests);
-
-      return new Response(JSON.stringify({
-        allowed: true,
-        limit,
-        remaining: limit - recentRequests.length,
-        resetTime: windowStart + windowMs
-      }), {
-        status: 200,
-        headers: {
-          'Content-Type': 'application/json',
-          'X-RateLimit-Limit': limit.toString(),
-          'X-RateLimit-Remaining': (limit - recentRequests.length).toString(),
-          'X-RateLimit-Reset': Math.ceil((windowStart + windowMs) / 1000).toString()
-        }
-      });
-
-    } catch (error: any) {
-      // Allow request on storage errors to avoid blocking legitimate traffic
-      return new Response(JSON.stringify({
-        allowed: true,
-        limit,
-        remaining: limit - 1,
-        resetTime: windowStart + windowMs,
-        error: 'Rate limiter storage error'
-      }), {
-        status: 200,
-        headers: {
-          'Content-Type': 'application/json',
-          'X-RateLimit-Error': 'storage-error'
-        }
-      });
-    }
-  }
-
-  /**
-   * Extract client identifier for rate limiting
-   */
-  private getClientId(request: Request): string {
-    // Use CF-Connecting-IP header if available, fallback to various other headers
-    const headers = request.headers;
-    const ip = headers.get('CF-Connecting-IP') || 
-               headers.get('X-Forwarded-For')?.split(',')[0] || 
-               headers.get('X-Real-IP') ||
-               'unknown';
-    
-    // Combine IP with User-Agent for more specific rate limiting
-    const userAgent = headers.get('User-Agent')?.substring(0, 50) || 'unknown';
-    
-    return `${ip}:${userAgent}`;
-  }
-}
 
 /**
  * Main worker entry point
@@ -112,7 +19,9 @@ export default {
     const url = new URL(request.url);
     const config = parseEnvironment(env);
     const requestId = crypto.randomUUID();
-    const logger = new WorkersLogger(env, config);
+    const logger = createLogger(env, config);
+    const featureFlags = createFeatureFlagsService(env);
+    const rateLimitingService = createRateLimitingService(env, config);
     const startTime = Date.now();
 
     // Log request start
@@ -121,8 +30,8 @@ export default {
         requestId,
         method: request.method,
         pathname: url.pathname,
-        userAgent: request.headers.get('User-Agent')?.substring(0, 100),
-        origin: request.headers.get('Origin'),
+        userAgent: request.headers.get('User-Agent')?.substring(0, 100) || 'unknown',
+        origin: request.headers.get('Origin') || 'unknown',
         timestamp: new Date().toISOString()
       });
     }
@@ -297,6 +206,11 @@ export default {
     }
   }
 };
+
+/**
+ * Export the enhanced RateLimiter Durable Object
+ */
+export { RateLimiter };
 
 /**
  * Export types for use in other modules
