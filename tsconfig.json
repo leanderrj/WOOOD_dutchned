@@ -26,6 +26,10 @@
   },
   "exclude": [
     "node_modules",
-    ".gadget"
+    "dist",
+    "build",
+    "backend/dist",
+    "extensions/*/dist",
+    "extensions/*/build"
   ]
 }

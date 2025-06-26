@@ -8,7 +8,7 @@ api_version = "2024-04"
 type = "function"
 name = "shipping-method"
 handle = "shipping-method"
-description = "Filters shipping methods based on cart contents."
+description = "Filters and customizes shipping methods based on product metafields for WOOOD furniture delivery"
 
 [extensions.build]
 command = ""

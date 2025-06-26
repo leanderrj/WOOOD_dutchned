@@ -1,3 +1,0 @@
-filter ($session: Session) on ShopifyCheckoutLineItem [
-  where shopId == $session.shopId
-]
