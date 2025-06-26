@@ -1,3 +1,5 @@
+import { useSettings } from '@shopify/ui-extensions-react/checkout';
+
 export interface DeliveryDate {
   date: string;
   displayName: string;
@@ -13,18 +15,21 @@ export interface ApiResponse {
 export interface FetchConfig {
   timeout?: number;
   retries?: number;
+  apiBaseUrl?: string;
+  enableMockMode?: boolean;
 }
 
 const DEFAULT_CONFIG: FetchConfig = {
   timeout: 15000, // 15 seconds
-  retries: 2
+  retries: 2,
+  apiBaseUrl: 'https://woood-dutchned.vercel.app', // Updated to match your repository name
+  enableMockMode: false
 };
 
 export async function fetchDeliveryDates(config: FetchConfig = DEFAULT_CONFIG): Promise<DeliveryDate[]> {
-  // For Shopify extensions, we'll use hardcoded values for now
-  // These can be configured via extension settings in production
-  const apiBaseUrl = 'https://woood-delivery-api.vercel.app';
-  const enableMockMode = false; // Can be enabled for testing
+  // Use configured API base URL or fallback to default
+  const apiBaseUrl = config.apiBaseUrl || DEFAULT_CONFIG.apiBaseUrl;
+  const enableMockMode = config.enableMockMode || DEFAULT_CONFIG.enableMockMode;
   
   // If mock mode is enabled, return mock data immediately
   if (enableMockMode) {
@@ -47,6 +52,7 @@ export async function fetchDeliveryDates(config: FetchConfig = DEFAULT_CONFIG): 
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
+          'Accept': 'application/json',
         },
         signal: controller.signal
       });
@@ -57,9 +63,15 @@ export async function fetchDeliveryDates(config: FetchConfig = DEFAULT_CONFIG): 
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
 
-      const data: DeliveryDate[] = await response.json();
+      const responseData = await response.json();
       
-      if (!Array.isArray(data)) {
+      // Handle both direct array response and wrapped response
+      let data: DeliveryDate[];
+      if (responseData.success && Array.isArray(responseData.data)) {
+        data = responseData.data;
+      } else if (Array.isArray(responseData)) {
+        data = responseData;
+      } else {
         throw new Error('Invalid response format: expected array of delivery dates');
       }
 
@@ -88,6 +100,45 @@ export async function fetchDeliveryDates(config: FetchConfig = DEFAULT_CONFIG): 
 
   // This should never be reached, but return mock data as final fallback
   return generateMockDeliveryDates();
+}
+
+export async function saveOrderMetafields(
+  deliveryDate: string, 
+  shippingMethod: string | null,
+  config: FetchConfig = DEFAULT_CONFIG
+): Promise<boolean> {
+  const apiBaseUrl = config.apiBaseUrl || DEFAULT_CONFIG.apiBaseUrl;
+  const url = `${apiBaseUrl}/api/order-metafields/save`;
+
+  try {
+    console.log('Saving order metafields:', { deliveryDate, shippingMethod });
+    
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+      },
+      body: JSON.stringify({
+        deliveryDate,
+        shippingMethod,
+        timestamp: new Date().toISOString(),
+        source: 'checkout_extension'
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+
+    const result = await response.json();
+    console.log('Successfully saved order metafields:', result);
+    return true;
+    
+  } catch (error: any) {
+    console.error('Failed to save order metafields:', error.message);
+    return false;
+  }
 }
 
 function generateMockDeliveryDates(): DeliveryDate[] {

@@ -13,8 +13,9 @@ import {
   useTranslate,
   ScrollView,
   useDeliveryGroups,
+  useSettings,
 } from "@shopify/ui-extensions-react/checkout";
-import { fetchDeliveryDates, DeliveryDate } from "./services/apiClient";
+import { fetchDeliveryDates, saveOrderMetafields, DeliveryDate } from "./services/apiClient";
 import { ErrorBoundary, useErrorHandler } from "./components/ErrorBoundary";
 
 export default reactExtension(
@@ -58,12 +59,25 @@ function DeliveryDatePicker() {
   const [availableDates, setAvailableDates] = useState<DeliveryDate[]>([]);
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [selectedShippingMethod, setSelectedShippingMethod] = useState<string | null>(null);
+  
   const shippingAddress = useShippingAddress();
   const deliveryGroups = useDeliveryGroups();
+  const settings = useSettings();
   const t = useTranslate();
 
+  // Get configuration from extension settings
+  const apiBaseUrl = typeof settings.api_base_url === 'string' ? settings.api_base_url : 'https://woood-dutchned.vercel.app';
+  const enableMockMode = typeof settings.enable_mock_mode === 'boolean' ? settings.enable_mock_mode : false;
+
   const applyAttributeChange = useApplyAttributeChange();
-  const [{ data: deliveryDatesData, loading, error: fetchError }, fetchDeliveryDatesAction] = useFetch(fetchDeliveryDates);
+  const [{ data: deliveryDatesData, loading, error: fetchError }, fetchDeliveryDatesAction] = useFetch(
+    () => fetchDeliveryDates({ 
+      apiBaseUrl, 
+      enableMockMode,
+      timeout: 15000,
+      retries: 2
+    })
+  );
 
   // Show the date picker only for Netherlands
   const countryCode = shippingAddress?.countryCode;
@@ -95,7 +109,7 @@ function DeliveryDatePicker() {
       setSelectedDate(null);
       setErrorKey(null);
     }
-  }, [showDatePicker, fetchDeliveryDatesAction]);
+  }, [showDatePicker, fetchDeliveryDatesAction, apiBaseUrl, enableMockMode]);
 
   useEffect(() => {
     if (fetchError) {
@@ -118,9 +132,10 @@ function DeliveryDatePicker() {
     setSelectedDate(dateString);
 
     try {
+      // Save to cart attributes
       const result = await applyAttributeChange({
         type: 'updateAttribute',
-        key: 'deliveryDate',
+        key: 'custom.dutchned_delivery_date',
         value: dateString,
       });
 
@@ -129,7 +144,15 @@ function DeliveryDatePicker() {
       }
 
       // Also save to backend for order metafield processing
-      await saveDeliveryAndShippingInfo(dateString, selectedShippingMethod);
+      const backendSuccess = await saveOrderMetafields(
+        dateString, 
+        selectedShippingMethod,
+        { apiBaseUrl, enableMockMode }
+      );
+      
+      if (!backendSuccess) {
+        console.warn('Backend save failed, but cart attributes were saved successfully');
+      }
       
     } catch (err) {
       console.error('Error saving delivery date:', err);
@@ -141,40 +164,25 @@ function DeliveryDatePicker() {
     try {
       const result = await applyAttributeChange({
         type: 'updateAttribute',
-        key: 'shippingMethod',
+        key: 'custom.selected_shipping_method',
         value: shippingMethod,
       });
 
       if (result.type === 'error') {
         throw new Error('Failed to save shipping method attribute');
       }
+      
+      // Also save to backend if delivery date is already selected
+      if (selectedDate) {
+        await saveOrderMetafields(
+          selectedDate, 
+          shippingMethod,
+          { apiBaseUrl, enableMockMode }
+        );
+      }
     } catch (err) {
       console.error('Error saving shipping method:', err);
       setErrorKey('error_saving_shipping');
-    }
-  };
-
-  const saveDeliveryAndShippingInfo = async (deliveryDate: string, shippingMethod: string | null) => {
-    try {
-      // For now, we'll use a placeholder URL - this will be configured during deployment
-      const apiBaseUrl = 'http://localhost:3000';
-      const response = await fetch(`${apiBaseUrl}/api/order-metafields/save`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          deliveryDate,
-          shippingMethod,
-          timestamp: new Date().toISOString(),
-        }),
-      });
-
-      if (!response.ok) {
-        console.warn('Failed to save to backend, but cart attributes were saved');
-      }
-    } catch (error) {
-      console.warn('Backend save failed, but cart attributes were saved:', error);
     }
   };
 
@@ -186,6 +194,13 @@ function DeliveryDatePicker() {
     <View border="base" cornerRadius="base" padding="base">
       <BlockStack spacing="base">
         <Heading level={2}>{t('title')}</Heading>
+
+        {/* Show API configuration info in development/testing */}
+        {enableMockMode && (
+          <Banner status="info">
+            <Text size="small">Mock mode enabled - using test data</Text>
+          </Banner>
+        )}
 
         {selectedShippingMethod && (
           <View>

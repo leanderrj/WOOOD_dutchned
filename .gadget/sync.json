@@ -1,9 +1,0 @@
-{
-  "application": "woood",
-  "environment": "development",
-  "environments": {
-    "development": {
-      "filesVersion": "1107"
-    }
-  }
-}

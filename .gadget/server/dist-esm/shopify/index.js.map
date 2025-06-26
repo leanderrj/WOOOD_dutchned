@@ -1,1 +1,0 @@
-{"version":3,"sources":["/var/gadget/codegen/framework-1750799195629-G8xqRi/src/shopify/index.ts"],"sourcesContent":["export * from \"./effects.js\";\n"],"names":[],"mappings":"AAAA,cAAc,eAAe"}
