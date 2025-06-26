@@ -422,15 +422,17 @@ app.use((error, req, res, next) => {
         timestamp: new Date().toISOString()
     });
 });
-// Start server
-app.listen(port, () => {
-    logger_1.logger.info(`Server started successfully`, {
-        port,
-        environment: process.env.NODE_ENV || 'development',
-        timestamp: new Date().toISOString(),
-        corsOrigins,
-        useMockData: process.env.USE_MOCK_DELIVERY_DATES === 'true'
+// Start server only when running directly (not when imported)
+if (require.main === module) {
+    app.listen(port, () => {
+        logger_1.logger.info(`Server started successfully`, {
+            port,
+            environment: process.env.NODE_ENV || 'development',
+            timestamp: new Date().toISOString(),
+            corsOrigins,
+            useMockData: process.env.USE_MOCK_DELIVERY_DATES === 'true'
+        });
     });
-});
+}
 exports.default = app;
 //# sourceMappingURL=server.js.map

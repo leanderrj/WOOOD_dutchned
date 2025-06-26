@@ -1,24 +1,8 @@
 {
     "version": 2,
     "buildCommand": "yarn build",
-    "installCommand": "yarn install && cd backend && yarn install",
-    "builds": [
-        {
-            "src": "backend/dist/server.js",
-            "use": "@vercel/node"
-        }
-    ],
-    "routes": [
-        {
-            "src": "/(.*)",
-            "dest": "backend/dist/server.js"
-        }
-    ],
-    "env": {
-        "NODE_ENV": "production"
-    },
     "functions": {
-        "backend/dist/server.js": {
+        "api/index.js": {
             "maxDuration": 30
         }
     }
