@@ -7,6 +7,34 @@ compatibility_flags = ["nodejs_compat"]
 [vars]
 ENVIRONMENT = "development"
 
+# Feature flags for development
+ENABLE_CACHING = "true"
+ENABLE_RATE_LIMITING = "true"
+ENABLE_MOCK_FALLBACK = "true"
+ENABLE_DETAILED_ERROR_MESSAGES = "true"
+ENABLE_PERFORMANCE_MONITORING = "true"
+ENABLE_DUTCHNED_API = "true"
+ENABLE_SHIPPING_METHOD_PROCESSING = "true"
+ENABLE_REQUEST_LOGGING = "true"
+ENABLE_ERROR_TRACKING = "true"
+ENABLE_LOADING_STATES = "true"
+ENABLE_USER_FEEDBACK = "true"
+ENABLE_EXTERNAL_ERROR_REPORTING = "false"
+ENABLE_ANALYTICS_TRACKING = "false"
+ENABLE_WEBHOOK_NOTIFICATIONS = "false"
+ENABLE_DEBUG_LOGGING = "true"
+ENABLE_VERBOSE_RESPONSES = "true"
+USE_MOCK_DELIVERY_DATES = "false"
+
+# API Configuration
+API_TIMEOUT = "10000"
+MAX_RETRIES = "3"
+CACHE_DURATION = "300000"
+
+# Rate limiting configuration
+RATE_LIMIT_WINDOW_MS = "900000"
+RATE_LIMIT_MAX_REQUESTS = "100"
+
 # KV namespaces for caching
 [[kv_namespaces]]
 binding = "DELIVERY_CACHE"
@@ -23,16 +51,74 @@ class_name = "RateLimiter"
 tag = "v1"
 new_classes = ["RateLimiter"]
 
+# Analytics and monitoring (development)
+[observability]
+enabled = true
+
+# Custom analytics
+[[analytics_engine_datasets]]
+binding = "WORKER_ANALYTICS"
+dataset = "woood_delivery_analytics_dev"
+
+# ============================================================================
+# STAGING ENVIRONMENT
+# ============================================================================
+
 [env.staging]
 name = "woood-delivery-api-staging"
 
 [env.staging.vars]
 ENVIRONMENT = "staging"
 
+# Feature flags for staging (similar to production but with debugging)
+ENABLE_CACHING = "true"
+ENABLE_RATE_LIMITING = "true"
+ENABLE_MOCK_FALLBACK = "true"
+ENABLE_DETAILED_ERROR_MESSAGES = "true"
+ENABLE_PERFORMANCE_MONITORING = "true"
+ENABLE_DUTCHNED_API = "true"
+ENABLE_SHIPPING_METHOD_PROCESSING = "true"
+ENABLE_REQUEST_LOGGING = "true"
+ENABLE_ERROR_TRACKING = "true"
+ENABLE_LOADING_STATES = "true"
+ENABLE_USER_FEEDBACK = "true"
+ENABLE_EXTERNAL_ERROR_REPORTING = "true"
+ENABLE_ANALYTICS_TRACKING = "true"
+ENABLE_WEBHOOK_NOTIFICATIONS = "false"
+ENABLE_DEBUG_LOGGING = "true"
+ENABLE_VERBOSE_RESPONSES = "true"
+USE_MOCK_DELIVERY_DATES = "false"
+
+# API Configuration for staging
+API_TIMEOUT = "15000"
+MAX_RETRIES = "3"
+CACHE_DURATION = "300000"
+
+# Rate limiting configuration for staging
+RATE_LIMIT_WINDOW_MS = "900000"
+RATE_LIMIT_MAX_REQUESTS = "200"
+
+# Staging routes (custom subdomain)
+[[env.staging.routes]]
+pattern = "staging-api.woood-delivery.com/*"
+zone_name = "woood-delivery.com"
+
 [[env.staging.kv_namespaces]]
 binding = "DELIVERY_CACHE"
 id = "placeholder-staging-kv-namespace-id"
 preview_id = "placeholder-staging-preview-kv-namespace-id"
+
+# Staging analytics
+[env.staging.observability]
+enabled = true
+
+[[env.staging.analytics_engine_datasets]]
+binding = "WORKER_ANALYTICS"
+dataset = "woood_delivery_analytics_staging"
+
+# ============================================================================
+# PRODUCTION ENVIRONMENT
+# ============================================================================
 
 [env.production]
 name = "woood-delivery-api"
@@ -40,16 +126,130 @@ name = "woood-delivery-api"
 [env.production.vars]
 ENVIRONMENT = "production"
 
-# Production routes (uncomment when custom domain is configured)
-# routes = [
-#   { pattern = "api.woood-delivery.com/*", zone_name = "woood-delivery.com" }
-# ]
+# Feature flags for production (optimized for performance)
+ENABLE_CACHING = "true"
+ENABLE_RATE_LIMITING = "true"
+ENABLE_MOCK_FALLBACK = "true"
+ENABLE_DETAILED_ERROR_MESSAGES = "false"
+ENABLE_PERFORMANCE_MONITORING = "true"
+ENABLE_DUTCHNED_API = "true"
+ENABLE_SHIPPING_METHOD_PROCESSING = "true"
+ENABLE_REQUEST_LOGGING = "true"
+ENABLE_ERROR_TRACKING = "true"
+ENABLE_LOADING_STATES = "true"
+ENABLE_USER_FEEDBACK = "true"
+ENABLE_EXTERNAL_ERROR_REPORTING = "true"
+ENABLE_ANALYTICS_TRACKING = "true"
+ENABLE_WEBHOOK_NOTIFICATIONS = "true"
+ENABLE_DEBUG_LOGGING = "false"
+ENABLE_VERBOSE_RESPONSES = "false"
+USE_MOCK_DELIVERY_DATES = "false"
+
+# API Configuration for production
+API_TIMEOUT = "10000"
+MAX_RETRIES = "3"
+CACHE_DURATION = "300000"
+
+# Rate limiting configuration for production
+RATE_LIMIT_WINDOW_MS = "900000"
+RATE_LIMIT_MAX_REQUESTS = "100"
+
+# Production routes (custom domain)
+[[env.production.routes]]
+pattern = "api.woood-delivery.com/*"
+zone_name = "woood-delivery.com"
 
 [[env.production.kv_namespaces]]
 binding = "DELIVERY_CACHE"
 id = "placeholder-production-kv-namespace-id"
 preview_id = "placeholder-production-preview-kv-namespace-id"
 
+# Production analytics and monitoring
+[env.production.observability]
+enabled = true
+head_sampling_rate = 0.01  # Sample 1% of requests for detailed tracing
+
+[[env.production.analytics_engine_datasets]]
+binding = "WORKER_ANALYTICS"
+dataset = "woood_delivery_analytics_prod"
+
+# ============================================================================
+# BUILD AND DEPLOYMENT CONFIGURATION
+# ============================================================================
+
 # Build configuration
 [build]
-command = "" 
+command = ""
+
+# Minification settings for production builds
+minify = true
+
+# Compatibility settings
+# compatibility_date is already defined at the top of the file (2024-01-15)
+# This ensures compatibility with the latest Workers runtime features
+
+# Security headers (applied via the worker code, but documented here)
+# - Content-Security-Policy
+# - X-Content-Type-Options: nosniff
+# - X-Frame-Options: DENY
+# - X-XSS-Protection: 1; mode=block
+# - Referrer-Policy: strict-origin-when-cross-origin
+
+# ============================================================================
+# DEVELOPMENT CONFIGURATION
+# ============================================================================
+
+# Local development settings
+[dev]
+# Development server configuration
+local_protocol = "https"
+upstream_protocol = "https"
+port = 8787
+
+# ============================================================================
+# SECRETS CONFIGURATION (via wrangler secret put)
+# ============================================================================
+
+# The following secrets should be configured via CLI:
+# wrangler secret put DUTCHNED_API_CREDENTIALS --env production
+# wrangler secret put DUTCHNED_API_CREDENTIALS --env staging
+# wrangler secret put EXTERNAL_ERROR_REPORTING_TOKEN --env production
+# wrangler secret put EXTERNAL_ERROR_REPORTING_TOKEN --env staging
+# wrangler secret put WEBHOOK_SECRET --env production
+# wrangler secret put WEBHOOK_SECRET --env staging
+# wrangler secret put ANALYTICS_API_KEY --env production
+# wrangler secret put ANALYTICS_API_KEY --env staging
+
+# ============================================================================
+# CUSTOM DOMAIN CONFIGURATION
+# ============================================================================
+
+# Custom domains are configured via Cloudflare Dashboard or CLI:
+# Production: api.woood-delivery.com
+# Staging: staging-api.woood-delivery.com
+# 
+# DNS Configuration Required:
+# api.woood-delivery.com -> CNAME to woood-delivery-api.workers.dev
+# staging-api.woood-delivery.com -> CNAME to woood-delivery-api-staging.workers.dev
+#
+# SSL/TLS: Universal SSL certificates managed by Cloudflare
+
+# ============================================================================
+# MONITORING AND ALERTING
+# ============================================================================
+
+# Analytics Engine datasets for custom metrics:
+# - Request volume and latency
+# - Error rates by endpoint
+# - Cache hit rates
+# - Rate limiting events
+# - Feature flag usage statistics
+# - DutchNed API performance
+# - User experience metrics
+
+# Alerting (configured via Cloudflare Dashboard):
+# - Error rate > 5% for 5 minutes
+# - Response time > 1000ms for 5 minutes
+# - Request volume drops > 50% for 10 minutes
+# - Rate limiting triggers > 100/hour
+# - DutchNed API errors > 10% for 5 minutes 
