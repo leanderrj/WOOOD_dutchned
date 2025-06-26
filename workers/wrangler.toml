@@ -1,0 +1,55 @@
+name = "woood-delivery-api"
+main = "src/index.ts"
+compatibility_date = "2024-01-15"
+compatibility_flags = ["nodejs_compat"]
+
+# Default environment (development)
+[vars]
+ENVIRONMENT = "development"
+
+# KV namespaces for caching
+[[kv_namespaces]]
+binding = "DELIVERY_CACHE"
+id = "placeholder-kv-namespace-id"
+preview_id = "placeholder-preview-kv-namespace-id"
+
+# Durable Objects for rate limiting
+[[durable_objects.bindings]]
+name = "RATE_LIMITER"
+class_name = "RateLimiter"
+
+# Durable Object migrations
+[[migrations]]
+tag = "v1"
+new_classes = ["RateLimiter"]
+
+[env.staging]
+name = "woood-delivery-api-staging"
+
+[env.staging.vars]
+ENVIRONMENT = "staging"
+
+[[env.staging.kv_namespaces]]
+binding = "DELIVERY_CACHE"
+id = "placeholder-staging-kv-namespace-id"
+preview_id = "placeholder-staging-preview-kv-namespace-id"
+
+[env.production]
+name = "woood-delivery-api"
+
+[env.production.vars]
+ENVIRONMENT = "production"
+
+# Production routes (uncomment when custom domain is configured)
+# routes = [
+#   { pattern = "api.woood-delivery.com/*", zone_name = "woood-delivery.com" }
+# ]
+
+[[env.production.kv_namespaces]]
+binding = "DELIVERY_CACHE"
+id = "placeholder-production-kv-namespace-id"
+preview_id = "placeholder-production-preview-kv-namespace-id"
+
+# Build configuration
+[build]
+command = "" 

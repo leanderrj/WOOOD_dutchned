@@ -235,70 +235,534 @@ Build a standalone Shopify Checkout UI Extension with delivery date picker that 
 
 ---
 
-## File Structure
+## Sprint 7: Direct API Integration (3 Story Points) ✅ COMPLETED
+
+### Task 7.1: Extension API Client Enhancement (2 SP) ✅
+- ✅ Update `extensions/date-picker/src/services/apiClient.ts` to support configurable API settings
+- ✅ Add `saveOrderMetafields()` function for direct backend integration
+- ✅ Implement proper TypeScript types and error handling
+- ✅ Add support for both direct array and wrapped API responses
+
+### Task 7.2: Extension Configuration Integration (1 SP) ✅
+- ✅ Update `extensions/date-picker/src/index.tsx` to use extension settings
+- ✅ Integrate `useSettings()` hook for merchant-configurable API URL and mock mode
+- ✅ Update cart attribute keys to use `custom.` prefix
+- ✅ Add direct backend synchronization for delivery dates and shipping methods
+- ✅ Fix TypeScript linting errors and improve type safety
+
+---
+
+# 🚀 CLOUDFLARE WORKERS MIGRATION PLAN
+
+---
+
+## Sprint 8: Cloudflare Workers Foundation (6 Story Points) ✅ COMPLETED
+
+### Task 8.1: Cloudflare Workers Project Setup (2 SP) ✅
+- ✅ Create new `workers/` directory structure
+- ✅ Initialize Cloudflare Workers project with Wrangler CLI
+- ✅ Configure `wrangler.toml` with:
+  ```toml
+  name = "woood-delivery-api"
+  main = "src/index.ts"
+  compatibility_date = "2024-01-15"
+  compatibility_flags = ["nodejs_compat"]
+
+  [env.production]
+  name = "woood-delivery-api"
+
+  [env.staging]
+  name = "woood-delivery-api-staging"
+  ```
+- ✅ Set up TypeScript configuration optimized for Workers runtime
+- ✅ Create package.json with Workers-specific dependencies:
+  ```json
+  {
+    "devDependencies": {
+      "@cloudflare/workers-types": "^4.20240112.0",
+      "wrangler": "^3.22.0",
+      "typescript": "^5.0.0"
+    }
+  }
+  ```
+
+### Task 8.2: Environment Variables Migration (1 SP) ✅
+- ✅ Migrate environment variables to Cloudflare Workers format
+- ✅ Configure environment variable structure for Wrangler CLI deployment
+- ✅ Set up environment-specific variables for development, staging, and production
+- ✅ Create comprehensive environment type definitions for Workers with all feature flags
+
+### Task 8.3: Core Worker Structure (2 SP) ✅
+- ✅ Create `src/index.ts` main worker entry point with request routing
+- ✅ Implement request router with placeholder endpoints for all API routes
+- ✅ Implement CORS handling for Shopify domains
+- ✅ Add request logging, error handling, and performance monitoring
+- ✅ Export RateLimiter Durable Object class for rate limiting functionality
+
+### Task 8.4: TypeScript Interfaces Migration (1 SP) ✅
+- ✅ Migrate existing TypeScript interfaces to Workers format
+- ✅ Create comprehensive common types for all API data structures
+- ✅ Update interfaces for Workers-specific APIs with KV and Durable Objects support
+- ✅ Build successful with TypeScript compilation and Wrangler validation
+
+---
+
+## Sprint 9: API Services Migration (8 Story Points) 🎯 PLANNED
+
+### Task 9.1: Delivery Dates Service Migration (3 SP)
+- 🔄 Migrate `deliveryDatesService.ts` to Workers format
+- 🔄 Replace Express-style error handling with Workers Response API
+- 🔄 Implement Cloudflare KV storage for caching:
+  ```typescript
+  export async function getDeliveryDates(env: Env): Promise<DeliveryDate[]> {
+    const cacheKey = 'delivery-dates';
+
+    // Try to get from KV cache first
+    const cachedData = await env.DELIVERY_CACHE.get(cacheKey, 'json');
+    if (cachedData && isValidCache(cachedData)) {
+      return cachedData.data;
+    }
+
+    // Fetch from API
+    const freshData = await fetchFromDutchNedAPI(env);
+
+    // Store in KV cache with TTL
+    await env.DELIVERY_CACHE.put(cacheKey, JSON.stringify({
+      data: freshData,
+      timestamp: Date.now()
+    }), { expirationTtl: 300 }); // 5 minutes
+
+    return freshData;
+  }
+  ```
+- 🔄 Update retry logic for Workers fetch API
+
+### Task 9.2: DutchNed API Client Migration (2 SP)
+- 🔄 Migrate `dutchNedClient.ts` to use Workers fetch API
+- 🔄 Remove Node.js-specific imports (AbortController now built-in)
+- 🔄 Implement Workers-compatible authentication:
+  ```typescript
+  export async function fetchDeliveryDatesFromAPI(env: Env): Promise<DeliveryDate[]> {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000);
+
+    try {
+      const response = await fetch(env.DUTCHNED_API_URL, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Basic ${env.DUTCHNED_API_CREDENTIALS}`,
+          'Accept': 'application/json',
+          'User-Agent': 'WOOOD-Delivery-API/1.0'
+        },
+        signal: controller.signal
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      return await response.json();
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  }
+  ```
+
+### Task 9.3: Shipping Method Service Migration (2 SP)
+- 🔄 Migrate `shippingMethodService.ts` to Workers
+- 🔄 Implement KV storage for shipping method data persistence
+- 🔄 Update shipping method processing for Workers environment:
+  ```typescript
+  export async function processShippingMethodSelection(
+    data: ShippingMethodData,
+    env: Env
+  ): Promise<ProcessingResult> {
+    const key = `shipping-method:${data.cartId || data.orderId}`;
+
+    try {
+      // Store in KV with longer TTL (24 hours for order processing)
+      await env.DELIVERY_CACHE.put(key, JSON.stringify(data), {
+        expirationTtl: 86400
+      });
+
+      return {
+        success: true,
+        data: data,
+        timestamp: new Date().toISOString()
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error.message,
+        timestamp: new Date().toISOString()
+      };
+    }
+  }
+  ```
+
+### Task 9.4: Mock Data Generator Migration (1 SP)
+- 🔄 Migrate `mockDataGenerator.ts` to Workers
+- 🔄 Update date formatting for Workers JavaScript engine
+- 🔄 Ensure compatibility with V8 isolate environment:
+  ```typescript
+  export function generateMockDeliveryDates(): DeliveryDate[] {
+    const dates: DeliveryDate[] = [];
+    const today = new Date();
+
+    for (let i = 1; i <= 20; i++) {
+      const futureDate = new Date(today);
+      futureDate.setDate(today.getDate() + i);
+
+      // Skip weekends
+      const dayOfWeek = futureDate.getDay();
+      if (dayOfWeek === 0 || dayOfWeek === 6) continue;
+
+      const dateString = futureDate.toISOString().split('T')[0];
+      const displayName = futureDate.toLocaleDateString('nl-NL', {
+        weekday: 'long',
+        month: 'short',
+        day: 'numeric'
+      });
+
+      dates.push({ date: dateString, displayName });
+      if (dates.length >= 14) break;
+    }
+
+    return dates;
+  }
+  ```
+
+---
+
+## Sprint 10: Workers Utilities and Middleware (5 Story Points) 🎯 PLANNED
+
+### Task 10.1: Logging System Migration (2 SP)
+- 🔄 Migrate logging system to use Workers Console API and external services
+- 🔄 Implement structured logging for Workers:
+  ```typescript
+  export class WorkersLogger {
+    constructor(private env: Env) {}
+
+    info(message: string, metadata?: LogMetadata): void {
+      const logEntry = {
+        level: 'info',
+        message,
+        metadata,
+        timestamp: new Date().toISOString(),
+        worker: 'delivery-api'
+      };
+
+      console.log(JSON.stringify(logEntry));
+
+      // Optional: Send to external logging service
+      if (this.env.LOGGING_ENDPOINT) {
+        this.sendToExternalService(logEntry);
+      }
+    }
+
+    error(message: string, metadata?: LogMetadata): void {
+      const logEntry = {
+        level: 'error',
+        message,
+        metadata,
+        timestamp: new Date().toISOString(),
+        worker: 'delivery-api'
+      };
+
+      console.error(JSON.stringify(logEntry));
+
+      // Always send errors to external service if configured
+      if (this.env.ERROR_TRACKING_ENDPOINT) {
+        this.sendToExternalService(logEntry);
+      }
+    }
+  }
+  ```
+- 🔄 Add support for external logging services (LogFlare, Datadog, etc.)
+
+### Task 10.2: Rate Limiting with Durable Objects (2 SP)
+- 🔄 Implement rate limiting using Cloudflare Durable Objects
+- 🔄 Create `RateLimiter` Durable Object class:
+  ```typescript
+  export class RateLimiter {
+    constructor(private state: DurableObjectState) {}
+
+    async fetch(request: Request): Promise<Response> {
+      const clientId = this.getClientId(request);
+      const currentTime = Date.now();
+      const windowStart = currentTime - (15 * 60 * 1000); // 15 minutes
+
+      // Get request history
+      const requests = await this.state.storage.get<number[]>(clientId) || [];
+
+      // Filter requests within current window
+      const recentRequests = requests.filter(time => time > windowStart);
+
+      // Check if limit exceeded
+      if (recentRequests.length >= 100) { // 100 requests per 15 minutes
+        return new Response('Rate limit exceeded', {
+          status: 429,
+          headers: {
+            'X-RateLimit-Limit': '100',
+            'X-RateLimit-Remaining': '0',
+            'X-RateLimit-Reset': String(windowStart + (15 * 60 * 1000))
+          }
+        });
+      }
+
+      // Add current request
+      recentRequests.push(currentTime);
+      await this.state.storage.put(clientId, recentRequests);
+
+      return new Response('OK', {
+        headers: {
+          'X-RateLimit-Limit': '100',
+          'X-RateLimit-Remaining': String(100 - recentRequests.length),
+          'X-RateLimit-Reset': String(windowStart + (15 * 60 * 1000))
+        }
+      });
+    }
+  }
+  ```
+
+### Task 10.3: Feature Flags Migration (1 SP)
+- 🔄 Migrate feature flags to Workers environment variables
+- 🔄 Implement feature flag checking for Workers:
+  ```typescript
+  export class WorkersFeatureFlags {
+    constructor(private env: Env) {}
+
+    isEnabled(flag: string): boolean {
+      const value = this.env[`ENABLE_${flag.toUpperCase()}`];
+      return value === 'true' || value === '1';
+    }
+
+    getFeatureFlags(): FeatureFlags {
+      return {
+        enableCaching: this.isEnabled('caching'),
+        enableRateLimiting: this.isEnabled('rate_limiting'),
+        enableMockFallback: this.isEnabled('mock_fallback'),
+        enableDetailedErrorMessages: this.isEnabled('detailed_error_messages'),
+        enablePerformanceMonitoring: this.isEnabled('performance_monitoring'),
+        // ... other flags
+      };
+    }
+  }
+  ```
+
+---
+
+## Sprint 11: Workers Deployment and Configuration (4 Story Points) 🎯 PLANNED
+
+### Task 11.1: Wrangler Configuration (1 SP)
+- 🔄 Configure production and staging environments in `wrangler.toml`
+- 🔄 Set up custom domains and routes
+- 🔄 Configure KV namespaces:
+  ```toml
+  [[kv_namespaces]]
+  binding = "DELIVERY_CACHE"
+  id = "your-kv-namespace-id"
+  preview_id = "your-preview-kv-namespace-id"
+
+  [[durable_objects.bindings]]
+  name = "RATE_LIMITER"
+  class_name = "RateLimiter"
+  ```
+- 🔄 Set up environment-specific variables and secrets
+
+### Task 11.2: Custom Domain Setup (1 SP)
+- 🔄 Configure custom domain for Workers (e.g., `api.woood-delivery.com`)
+- 🔄 Set up SSL certificates and DNS configuration
+- 🔄 Configure route patterns for API endpoints
+- 🔄 Set up staging subdomain (`staging-api.woood-delivery.com`)
+
+### Task 11.3: Build and Deployment Scripts (1 SP)
+- 🔄 Update root `package.json` with Workers build scripts:
+  ```json
+  {
+    "scripts": {
+      "build": "yarn build:workers && yarn build:extensions",
+      "build:workers": "cd workers && wrangler build",
+      "deploy:workers:staging": "cd workers && wrangler deploy --env staging",
+      "deploy:workers:production": "cd workers && wrangler deploy --env production",
+      "dev:workers": "cd workers && wrangler dev",
+      "workers:logs": "cd workers && wrangler tail"
+    }
+  }
+  ```
+- 🔄 Create deployment documentation for Workers
+- 🔄 Set up CI/CD pipeline with GitHub Actions for automatic deployment
+
+### Task 11.4: Monitoring and Analytics Setup (1 SP)
+- 🔄 Configure Cloudflare Analytics for Workers
+- 🔄 Set up custom metrics and logging
+- 🔄 Configure alerts for error rates and performance issues
+- 🔄 Set up integration with external monitoring tools (optional)
+
+---
+
+## Sprint 12: Extension Updates and Testing (4 Story Points) 🎯 PLANNED
+
+### Task 12.1: Extension Configuration Updates (1 SP)
+- 🔄 Update default API base URL in extension settings to Workers domain
+- 🔄 Update `extensions/date-picker/shopify.extension.toml`:
+  ```toml
+  [[extensions.settings.fields]]
+  key = "api_base_url"
+  type = "single_line_text_field"
+  name = "API Base URL"
+  description = "Base URL for the delivery dates API (e.g., https://api.woood-delivery.com)"
+  ```
+- 🔄 Update extension documentation to reflect Workers endpoints
+
+### Task 12.2: API Client Compatibility Testing (1 SP)
+- 🔄 Test extension API client with Workers endpoints
+- 🔄 Verify CORS functionality with Shopify domains
+- 🔄 Test error handling and fallback mechanisms
+- 🔄 Validate response format compatibility
+
+### Task 12.3: Performance Testing (1 SP)
+- 🔄 Compare Workers vs Vercel performance metrics
+- 🔄 Test global edge performance from different regions
+- 🔄 Validate caching behavior with KV storage
+- 🔄 Test rate limiting functionality
+
+### Task 12.4: End-to-End Integration Testing (1 SP)
+- 🔄 Test complete workflow: Extension → Workers → DutchNed API
+- 🔄 Validate delivery date fetching and caching
+- 🔄 Test shipping method processing and storage
+- 🔄 Verify error tracking and logging functionality
+
+---
+
+## Sprint 13: Documentation and Migration (3 Story Points) 🎯 PLANNED
+
+### Task 13.1: Workers Documentation (1 SP)
+- 🔄 Create Workers-specific deployment guide
+- 🔄 Document environment variable setup with Wrangler
+- 🔄 Add troubleshooting guide for Workers-specific issues
+- 🔄 Document KV storage management and monitoring
+
+### Task 13.2: Migration Guide (1 SP)
+- 🔄 Create step-by-step migration guide from Vercel to Workers
+- 🔄 Document DNS changes and domain configuration
+- 🔄 Create rollback procedures in case of issues
+- 🔄 Document cost comparison and benefits analysis
+
+### Task 13.3: Legacy Cleanup (1 SP)
+- 🔄 Archive Vercel backend code (move to `legacy/` directory)
+- 🔄 Update README.md to reflect Workers architecture
+- 🔄 Remove Vercel-specific configuration files from root
+- 🔄 Update project documentation and file structure diagrams
+
+---
+
+## Updated File Structure After Workers Migration
 
 ```
 project-root/
-├── backend/
+├── workers/                          # 🆕 Cloudflare Workers API
 │   ├── src/
-│   │   ├── server.ts
+│   │   ├── index.ts                 # Main worker entry point
+│   │   ├── handlers/
+│   │   │   ├── deliveryDates.ts
+│   │   │   ├── shippingMethods.ts
+│   │   │   └── health.ts
 │   │   ├── services/
 │   │   │   ├── deliveryDatesService.ts
 │   │   │   ├── shippingMethodService.ts
 │   │   │   └── featureFlagsService.ts
 │   │   ├── api/
 │   │   │   └── dutchNedClient.ts
-│   │   ├── middleware/
-│   │   │   └── rateLimiter.ts
-│   │   └── utils/
-│   │       ├── mockDataGenerator.ts
-│   │       └── logger.ts
+│   │   ├── utils/
+│   │   │   ├── mockDataGenerator.ts
+│   │   │   ├── logger.ts
+│   │   │   └── cors.ts
+│   │   └── types/
+│   │       └── env.ts
+│   ├── wrangler.toml
 │   ├── package.json
-│   ├── .env.example
-│   ├── .env
-│   ├── vercel.json
 │   └── tsconfig.json
-├── extensions/
+├── legacy/                           # 🆕 Archived Vercel backend
+│   └── backend/                     # Moved from root level
+├── extensions/                       # ✅ Unchanged (standalone)
 │   ├── date-picker/
-│   │   ├── src/
-│   │   │   ├── index.tsx
-│   │   │   ├── services/
-│   │   │   │   └── apiClient.ts
-│   │   │   └── components/
-│   │   │       └── ErrorBoundary.tsx
-│   │   ├── locales/
-│   │   │   ├── en.json
-│   │   │   └── nl.default.json
-│   │   ├── package.json
-│   │   ├── .env.example
-│   │   ├── .env
-│   │   └── shopify.extension.toml
 │   └── shipping-method/
-│       ├── src/
-│       │   ├── index.ts
-│       │   └── shipping_method_filter.graphql
-│       ├── package.json
-│       ├── shopify.extension.toml
-│       └── schema.graphql
-├── README.md
-├── DEPLOYMENT.md
-└── package.json
+├── README.md                        # 🔄 Updated for Workers
+├── DEPLOYMENT.md                    # 🔄 Updated with Workers guide
+└── package.json                     # 🔄 Updated build scripts
 ```
 
 ---
 
-## Total Story Points: 32 SP ✅ COMPLETED
-**Estimated Timeline:** 5-6 weeks (assuming 5-7 SP per week)
+## Migration Benefits
 
-## Success Criteria ✅ ALL COMPLETED
-- ✅ Extension renders only for Netherlands addresses
-- ✅ Delivery dates fetched from DutchNed API via proxy
-- ✅ Fallback to mock data when API fails
-- ✅ Selected date saved as cart attribute
-- ✅ Shipping method selection based on product metafields
-- ✅ Selected shipping method saved as order metafield
-- ✅ Shipping method function filters delivery options correctly
-- ✅ Minimal hosting costs (serverless backend)
-- ✅ No dependency on external platforms beyond Shopify
-- ✅ Comprehensive documentation and deployment guides
-- ✅ All components build successfully and are production-ready
+### 🚀 **Performance Improvements**
+- **Global Edge Network**: 300+ locations worldwide vs single region
+- **Cold Start Reduction**: V8 isolates vs Docker containers (~100x faster)
+- **Response Time**: <50ms globally vs regional latency
+- **Caching**: Built-in KV storage vs in-memory (lost on restart)
+
+### 💰 **Cost Optimization**
+- **Request-based Pricing**: Pay per request vs always-on server
+- **No Idle Costs**: Workers only run when needed
+- **Built-in Features**: Free CORS, rate limiting, analytics
+- **Estimated Savings**: 60-80% reduction in hosting costs
+
+### 🛡️ **Enhanced Reliability**
+- **99.99% Uptime SLA**: Cloudflare's global network reliability
+- **DDoS Protection**: Built-in enterprise-level security
+- **Auto-scaling**: Handles traffic spikes automatically
+- **Zero Maintenance**: No server management required
+
+### 🔧 **Developer Experience**
+- **Instant Deployment**: `wrangler deploy` vs container builds
+- **Local Development**: `wrangler dev` with hot reload
+- **Built-in Analytics**: Real-time metrics and logging
+- **TypeScript First**: Native TypeScript support
+
+---
+
+## Migration Story Points Summary
+
+| Sprint | Focus Area | Story Points | Status |
+|--------|------------|--------------|--------|
+| Sprint 8 | Workers Foundation | 6 SP | 🎯 Planned |
+| Sprint 9 | API Services Migration | 8 SP | 🎯 Planned |
+| Sprint 10 | Utilities & Middleware | 5 SP | 🎯 Planned |
+| Sprint 11 | Deployment & Config | 4 SP | 🎯 Planned |
+| Sprint 12 | Testing & Integration | 4 SP | 🎯 Planned |
+| Sprint 13 | Documentation & Cleanup | 3 SP | 🎯 Planned |
+
+**Total Migration Story Points:** 30 SP
+**Estimated Timeline:** 4-5 weeks
+**Extensions:** Remain unchanged (0 SP required)
+
+---
+
+## Migration Success Criteria
+
+### ✅ **Functional Requirements**
+- [ ] All existing API endpoints work identically on Workers
+- [ ] Extensions continue to function without changes
+- [ ] Response times improve globally
+- [ ] Caching works with KV storage
+
+### ✅ **Performance Requirements**
+- [ ] <50ms response times globally
+- [ ] 99.99% uptime maintained
+- [ ] Rate limiting functions correctly
+- [ ] No functionality regression
+
+### ✅ **Operational Requirements**
+- [ ] Deployment pipeline established
+- [ ] Monitoring and alerting configured
+- [ ] Documentation updated
+- [ ] Cost reduction achieved (target: 60%+)
+
+---
+
+## Total Project Story Points: 62 SP ✅ 32 SP COMPLETED + 🎯 30 SP PLANNED
+**Completed Timeline:** 5-6 weeks
+**Migration Timeline:** 4-5 weeks
+**Total Project Timeline:** 9-11 weeks
