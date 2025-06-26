@@ -40,7 +40,7 @@ This project consists of three main components:
 
 ### Prerequisites
 
-- Node.js 18+ 
+- Node.js 18+
 - Yarn or npm
 - Shopify CLI
 - Shopify Partner account
@@ -61,7 +61,7 @@ yarn install
 cp backend/.env.example backend/.env
 # Edit backend/.env with your DutchNed API credentials
 
-# Date Picker Extension  
+# Date Picker Extension
 cp extensions/date-picker/.env.example extensions/date-picker/.env
 # Edit with your backend API URL
 ```
@@ -126,7 +126,7 @@ Fetch available delivery dates.
       "displayName": "dinsdag 16 januari"
     },
     {
-      "date": "2024-01-17", 
+      "date": "2024-01-17",
       "displayName": "woensdag 17 januari"
     }
   ],
@@ -280,7 +280,7 @@ A Shopify Function that:
 
 1. **Find Placeholder:** Searches for delivery option with handle `woood-standard`
 2. **Highest Priority Wins:** Inspects `custom.ShippingMethod2` metafield on cart items
-3. **Transform or Pass Through:** 
+3. **Transform or Pass Through:**
    - If high-priority shipping method found: renames and reprices placeholder, hides others
    - If no metafields found: leaves "WOOOD Standard" as default
 4. **Error Handling:** Hides placeholder if required shipping method not found
@@ -289,7 +289,7 @@ A Shopify Function that:
 #### Metafield Examples
 
 - `11 - PAKKET POST`
-- `15 - PAKKET POST GROOT` 
+- `15 - PAKKET POST GROOT`
 - `30 - EXPEDITIE STANDAARD`
 - `31 - EXPEDITIE GESTOFFEERD`
 - `32 - EXPEDITIE 2-MANS`
@@ -304,7 +304,7 @@ The backend supports 15+ feature flags for runtime configuration:
 - `ENABLE_MOCK_FALLBACK` - Enable/disable mock data fallback
 - `ENABLE_SHIPPING_METHOD_PROCESSING` - Enable/disable shipping method processing
 
-### Performance & Monitoring  
+### Performance & Monitoring
 - `ENABLE_RATE_LIMITING` - Enable/disable rate limiting
 - `ENABLE_PERFORMANCE_MONITORING` - Enable/disable performance tracking
 - `ENABLE_REQUEST_LOGGING` - Enable/disable request logging
@@ -476,7 +476,7 @@ Enable debug logging for detailed troubleshooting:
 ENABLE_DEBUG_LOGGING=true
 ENABLE_VERBOSE_RESPONSES=true
 
-# Frontend  
+# Frontend
 VITE_ENABLE_MOCK_MODE=true
 ```
 
