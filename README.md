@@ -66,19 +66,20 @@ cp extensions/date-picker/.env.example extensions/date-picker/.env
 # Edit with your backend API URL
 ```
 
-3. **Build all components:**
+3. **Deploy backend to Vercel:**
 ```bash
+# The main build script only builds the backend for Vercel
 yarn build
-```
 
-4. **Deploy backend to Vercel:**
-```bash
+# Or deploy directly to Vercel
 cd backend
 vercel deploy
 ```
 
-5. **Deploy Shopify extensions:**
+4. **Deploy Shopify extensions separately:**
 ```bash
+# Build and deploy extensions to Shopify
+yarn build:extensions
 shopify app deploy
 ```
 
@@ -326,15 +327,21 @@ The backend supports 15+ feature flags for runtime configuration:
 
 ## Deployment
 
+> **Important:** Backend and Shopify extensions are deployed separately. The main `yarn build` command only builds the backend for Vercel deployment and does not require Shopify authentication.
+
 ### Backend Deployment (Vercel)
 
-1. **Install Vercel CLI:**
-```bash
-npm i -g vercel
-```
+1. **Automatic Deployment via Git:**
+   - Push to main branch triggers automatic Vercel deployment
+   - Vercel runs `yarn build` which only builds the backend
+   - No Shopify authentication required
 
-2. **Deploy:**
+2. **Manual Deployment:**
 ```bash
+# Install Vercel CLI
+npm i -g vercel
+
+# Deploy backend directly
 cd backend
 vercel deploy --prod
 ```
@@ -348,13 +355,19 @@ vercel env add DUTCHNED_API_CREDENTIALS
 
 ### Shopify Extensions Deployment
 
+Extensions must be deployed separately using Shopify CLI:
+
 1. **Login to Shopify CLI:**
 ```bash
 shopify auth login
 ```
 
-2. **Deploy extensions:**
+2. **Build and deploy extensions:**
 ```bash
+# Build extensions locally (requires Shopify authentication)
+yarn build:extensions
+
+# Deploy to Shopify
 shopify app deploy
 ```
 
@@ -390,19 +403,22 @@ shopify app function run
 ### Build Commands
 
 ```bash
-# Build all components
+# Build backend only (for Vercel deployment)
 yarn build
+
+# Build all components (backend + extensions)
+yarn build:all
 
 # Build individual components
 yarn build:backend
+yarn build:extensions
 yarn build:date-picker
 yarn build:shipping-method
 
 # Type checking
 yarn type-check
 yarn type-check:backend
-yarn type-check:date-picker
-yarn type-check:shipping-method
+yarn type-check:extensions
 
 # Clean build artifacts
 yarn clean

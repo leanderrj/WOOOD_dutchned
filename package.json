@@ -5,7 +5,8 @@
   "license": "UNLICENSED",
   "private": true,
   "scripts": {
-    "build": "yarn install:backend && yarn build:backend && yarn build:extensions",
+    "build": "yarn install:backend && yarn build:backend",
+    "build:all": "yarn build && yarn build:extensions",
     "install:backend": "cd backend && yarn install",
     "build:backend": "cd backend && yarn build",
     "build:extensions": "cd extensions/date-picker && npm run build && cd ../shipping-method && npm run build",
