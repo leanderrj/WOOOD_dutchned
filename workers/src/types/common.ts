@@ -31,10 +31,12 @@ export interface DeliveryDatesResponse {
  */
 export interface ShippingMethodData {
   shippingMethod: string;
+  deliveryDate?: string;
+  timestamp?: string;
   cartId?: string;
   customerId?: string;
   orderId?: string;
-  timestamp?: string;
+  additionalData?: Record<string, any>;
 }
 
 /**
