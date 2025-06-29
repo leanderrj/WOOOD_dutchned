@@ -48,7 +48,7 @@ export class OAuthError extends Error {
     this.name = 'OAuthError';
     this.type = type;
     this.retryable = options.retryable ?? false;
-    
+
     if (options.shop !== undefined) {
       this.shop = options.shop;
     }
@@ -61,7 +61,7 @@ export class OAuthError extends Error {
     if (options.debugInfo !== undefined) {
       this.debugInfo = options.debugInfo;
     }
-    
+
     if (options.cause) {
       this.stack = options.cause.stack;
     }
@@ -134,7 +134,7 @@ export class ShopifyOAuthService {
       // Generate state for CSRF protection
       const state = this.generateState();
       const scopes = this.config.shopifyOAuth.scopes.join(',');
-      
+
       // Build OAuth URL
       const oauthUrl = new URL(`https://${validatedShop}/admin/oauth/authorize`);
       oauthUrl.searchParams.set('client_id', this.config.shopifyOAuth.clientId);
@@ -341,7 +341,7 @@ export class ShopifyOAuthService {
         // Calculate delay with exponential backoff
         const delay = this.calculateRetryDelay(attempt);
         console.log(`Retrying ${operationName} in ${delay}ms (attempt ${attempt + 1}/${this.retryConfig.maxAttempts})`);
-        
+
         await this.sleep(delay);
       }
     }
@@ -415,7 +415,7 @@ export class ShopifyOAuthService {
       cutoffDate.setDate(cutoffDate.getDate() - days);
 
       const result = await this.env.DELIVERY_CACHE.list({ prefix: 'oauth_monitoring:' });
-      
+
       let totalDuration = 0;
       for (const key of result.keys) {
         const data = await this.env.DELIVERY_CACHE.get(key.name);
@@ -423,7 +423,7 @@ export class ShopifyOAuthService {
 
         const monitoring = JSON.parse(data);
         const operationDate = new Date(monitoring.timestamp);
-        
+
         if (operationDate < cutoffDate) continue;
 
         stats.totalOperations++;
@@ -465,7 +465,7 @@ export class ShopifyOAuthService {
    */
   private async exchangeCodeForToken(shop: string, code: string): Promise<string> {
     const tokenEndpoint = `https://${shop}/admin/oauth/access_token`;
-    
+
     const response = await fetch(tokenEndpoint, {
       method: 'POST',
       headers: {
@@ -606,4 +606,4 @@ export const OAuthUtils = {
     if (!session.expires) return false;
     return session.expires < new Date();
   },
-}; 
+};

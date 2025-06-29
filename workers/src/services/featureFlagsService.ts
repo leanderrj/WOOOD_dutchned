@@ -245,8 +245,7 @@ export class WorkersFeatureFlags {
     // Check for missing required environment variables
     const requiredFlags = [
       'ENABLE_CACHING',
-      'ENABLE_RATE_LIMITING',
-      'ENABLE_DUTCHNED_API'
+      'ENABLE_RATE_LIMITING'
     ];
 
     for (const flag of requiredFlags) {

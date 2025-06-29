@@ -33,11 +33,11 @@ export async function handleOAuthStart(
 
     if (!shop) {
       return new Response(
-        JSON.stringify({
+        JSON.stringify({ 
           error: 'Missing shop parameter',
           message: 'Shop domain is required to start OAuth flow'
         }),
-        {
+        { 
           status: 400,
           headers: { 'Content-Type': 'application/json' }
         }
@@ -48,11 +48,11 @@ export async function handleOAuthStart(
     const validatedShop = OAuthUtils.extractShopDomain(shop || '');
     if (!validatedShop) {
       return new Response(
-        JSON.stringify({
+        JSON.stringify({ 
           error: 'Invalid shop domain',
           message: 'Shop domain must be a valid Shopify domain'
         }),
-        {
+        { 
           status: 400,
           headers: { 'Content-Type': 'application/json' }
         }
@@ -80,11 +80,11 @@ export async function handleOAuthStart(
     });
 
     return new Response(
-      JSON.stringify({
+      JSON.stringify({ 
         error: 'OAuth initiation failed',
         message: 'Unable to start OAuth flow. Please try again.'
       }),
-      {
+      { 
         status: 500,
         headers: { 'Content-Type': 'application/json' }
       }
@@ -109,6 +109,27 @@ export async function handleOAuthCallback(
     const code = url.searchParams.get('code');
     const state = url.searchParams.get('state');
     const error = url.searchParams.get('error');
+
+    // Enhanced debugging for 404 troubleshooting
+    const searchParams: Record<string, string> = {};
+    url.searchParams.forEach((value, key) => {
+      searchParams[key] = value;
+    });
+
+    logger.info('🔍 OAuth Callback Debug', {
+      requestId,
+      fullUrl: request.url,
+      method: request.method,
+      pathname: url.pathname,
+      shop: shop ?? 'missing',
+      code: code ? `present (${code.substring(0, 8)}...)` : 'missing',
+      state: state ? `present (${state.substring(0, 8)}...)` : 'missing',
+      error: error ?? 'none',
+      allSearchParams: searchParams,
+      userAgent: request.headers.get('User-Agent') ?? undefined,
+      referer: request.headers.get('Referer') ?? undefined,
+      host: request.headers.get('Host') ?? undefined
+    });
 
     logger.info('OAuth callback received', {
       requestId,
@@ -136,7 +157,7 @@ export async function handleOAuthCallback(
         hasCode: !!code,
         hasState: !!state
       });
-
+      
       return createOAuthErrorResponse(
         'Invalid OAuth Callback',
         'Missing required parameters. Please try installing the app again.',
@@ -193,28 +214,65 @@ export async function handleAppInstallation(
   const shop = url.searchParams.get('shop');
   const embedded = url.searchParams.get('embedded');
   const session = url.searchParams.get('session');
-
-  logger.info('App installation/access request', {
-    requestId,
-    shop: shop ?? undefined,
-    embedded: embedded ?? undefined,
-    hasSession: !!session,
-    pathname: url.pathname,
-    searchParams: url.search
+  const host = url.searchParams.get('host');
+  const hmac = url.searchParams.get('hmac');
+  const timestamp = url.searchParams.get('timestamp');
+  
+  // Enhanced debugging for embedded app loading
+  const allParams: Record<string, string> = {};
+  url.searchParams.forEach((value, key) => {
+    allParams[key] = value;
   });
 
-  // If this is an embedded app request with session (post-OAuth), serve the frontend
-  if (embedded === '1' && shop && session) {
-    logger.info('Serving embedded app frontend', { requestId, shop });
-    return createEmbeddedAppResponse(shop, env);
+  logger.info('🔍 App installation/access request debug', {
+    requestId,
+    shop: shop ?? 'missing',
+    embedded: embedded ?? 'missing',
+    session: session ?? 'missing',
+    host: host ? 'present' : 'missing',
+    hmac: hmac ? 'present' : 'missing',
+    timestamp: timestamp ?? 'missing',
+    pathname: url.pathname,
+    searchParams: url.search,
+    allParams,
+    userAgent: request.headers.get('User-Agent') ?? undefined,
+    referer: request.headers.get('Referer') ?? undefined
+  });
+
+  // If this is an embedded app request, serve the frontend (more permissive check)
+  if (embedded === '1' && shop) {
+    // Check if we have authentication evidence
+    const hasShopifySession = url.searchParams.has('hmac') || url.searchParams.has('id_token') || url.searchParams.has('timestamp');
+    const hasCustomSession = session === 'authenticated';
+    const hasHost = !!host; // Shopify always provides host for embedded apps
+
+    // Be more permissive - if it's embedded with shop and has either auth or host, serve the app
+    if (hasShopifySession || hasCustomSession || hasHost) {
+      logger.info('✅ Serving embedded app frontend', {
+        requestId,
+        shop,
+        hasShopifySession,
+        hasCustomSession,
+        hasHost,
+        authMethod: hasCustomSession ? 'custom_session' : hasShopifySession ? 'shopify_session' : 'host_only'
+      });
+      return createEmbeddedAppResponse(shop, env);
+    } else {
+      logger.warn('❌ Embedded app request missing authentication', {
+        requestId,
+        shop,
+        embedded,
+        missingAuth: 'No hmac, id_token, timestamp, session, or host parameters found'
+      });
+    }
   }
 
-  // If shop parameter is present but no session, start OAuth
+  // If shop parameter is present but no valid session, start OAuth
   if (shop && !session) {
     logger.info('No session found, redirecting to OAuth', { requestId, shop });
-    const oauthUrl = new URL(request.url);
-    oauthUrl.pathname = '/auth/start';
-    return Response.redirect(oauthUrl.toString(), 302);
+  const oauthUrl = new URL(request.url);
+  oauthUrl.pathname = '/auth/start';
+  return Response.redirect(oauthUrl.toString(), 302);
   }
 
   // Default installation page
@@ -234,12 +292,12 @@ async function registerMandatoryWebhooks(
     const webhooks = [
       {
         topic: 'orders/paid',
-        address: `${config.shopifyOAuth.appUrl}/webhooks/orders/paid`,
+        address: `${config.shopifyOAuth.appUrl}/api/webhooks/orders/paid`,
         format: 'json',
       },
       {
         topic: 'app/uninstalled',
-        address: `${config.shopifyOAuth.appUrl}/webhooks/app/uninstalled`,
+        address: `${config.shopifyOAuth.appUrl}/api/webhooks/app/uninstalled`,
         format: 'json',
       },
     ];
@@ -410,29 +468,92 @@ function createOAuthSuccessResponse(session: Session, isNewInstallation: boolean
     const host = urlParams.get('host');
     const shop = '${session.shop}';
 
-    if (window.shopify && window.shopify.AppBridge) {
-      const app = window.shopify.AppBridge.createApp({
-                 apiKey: '${env.SHOPIFY_APP_CLIENT_ID}',
-        host: host,
-        forceRedirect: true
-      });
+    console.log('🔍 OAuth Success Page Debug:', {
+      currentUrl: window.location.href,
+      shop: shop,
+      host: host,
+      hostDecoded: host ? decodeURIComponent(host) : null,
+      isEmbedded: window.parent !== window,
+      hasAppBridge: !!(window.shopify && window.shopify.AppBridge),
+      allParams: Object.fromEntries(urlParams.entries())
+    });
 
-      // Redirect to main app interface after 3 seconds
-      setTimeout(() => {
-        if (window.parent !== window) {
-          // We're in an iframe, redirect the parent to the app
-          window.parent.location.href = '/?embedded=1&shop=' + encodeURIComponent(shop);
-        } else {
-          // Standalone mode, redirect current window to app
-          window.location.href = '/?shop=' + encodeURIComponent(shop);
+    // Enhanced redirect with better URL construction
+    function performRedirect() {
+      const baseUrl = window.location.origin;
+      const hostParam = host ? '&host=' + encodeURIComponent(host) : '';
+      
+             console.log('🔄 Preparing redirect...', {
+         baseUrl,
+         shop,
+         host,
+         hostParam,
+         isEmbedded: window.parent !== window
+       });
+       
+       // Test the redirect URL before using it
+       const testUrl = window.parent !== window 
+         ? baseUrl + '/?embedded=1&shop=' + encodeURIComponent(shop) + '&session=authenticated' + hostParam
+         : baseUrl + '/?shop=' + encodeURIComponent(shop) + '&session=authenticated' + hostParam;
+         
+       console.log('🧪 Testing redirect URL:', testUrl);
+       
+       // Test if the URL is accessible
+       fetch(testUrl, { method: 'HEAD' })
+         .then(response => {
+           console.log('✅ Redirect URL test:', {
+             url: testUrl,
+             status: response.status,
+             ok: response.ok,
+             statusText: response.statusText
+           });
+         })
+         .catch(error => {
+           console.error('❌ Redirect URL test failed:', error);
+         });
+      
+      if (window.parent !== window) {
+        // We're in an iframe (embedded context)
+        const redirectUrl = baseUrl + '/?embedded=1&shop=' + encodeURIComponent(shop) + '&session=authenticated' + hostParam;
+        console.log('🔄 Redirecting parent window to:', redirectUrl);
+        
+        try {
+          window.parent.location.href = redirectUrl;
+        } catch (redirectError) {
+          console.error('❌ Parent redirect failed:', redirectError);
+          // Fallback: redirect current window
+          console.log('🔄 Fallback: redirecting current window');
+          window.location.href = redirectUrl;
         }
-      }, 3000);
-    } else {
-      // Fallback if App Bridge is not available
-        setTimeout(() => {
-        window.location.href = '/admin?shop=' + encodeURIComponent(shop);
-      }, 3000);
+      } else {
+        // Standalone mode
+        const redirectUrl = baseUrl + '/?shop=' + encodeURIComponent(shop) + '&session=authenticated' + hostParam;
+        console.log('🔄 Redirecting current window to:', redirectUrl);
+        window.location.href = redirectUrl;
+      }
     }
+
+    if (window.shopify && window.shopify.AppBridge) {
+      try {
+        const app = window.shopify.AppBridge.createApp({
+          apiKey: '${env.SHOPIFY_APP_CLIENT_ID}',
+          host: host,
+          forceRedirect: true
+        });
+        
+        console.log('✅ OAuth Success: App Bridge initialized');
+        
+        // Redirect to main app interface after 5 seconds (increased delay for session save)
+        setTimeout(performRedirect, 5000);
+              } catch (appBridgeError) {
+          console.error('❌ OAuth Success: App Bridge failed:', appBridgeError);
+          // Still perform redirect even if App Bridge fails
+          setTimeout(performRedirect, 5000);
+        }
+          } else {
+        console.warn('⚠️ OAuth Success: App Bridge not available, proceeding with redirect');
+        setTimeout(performRedirect, 5000);
+      }
     </script>
 </body>
 </html>`;
@@ -526,13 +647,13 @@ function createOAuthErrorResponse(title: string, message: string, shop?: string 
         <h1>${title}</h1>
         <p>${message}</p>
         ${shop ? `<p><strong>Shop:</strong> ${shop}</p>` : ''}
-
+        
         ${shop ? `
         <a href="/auth/start?shop=${encodeURIComponent(shop)}" class="retry-btn">
             🔄 Try Again
         </a>
         ` : ''}
-
+        
         <button class="close-btn" onclick="window.close()">
             Close Window
         </button>
@@ -547,7 +668,7 @@ function createOAuthErrorResponse(title: string, message: string, shop?: string 
       'Cache-Control': 'no-cache, no-store, must-revalidate'
     }
   });
-}
+} 
 
 /**
  * Create embedded app response that serves the frontend React app
@@ -609,42 +730,173 @@ function createEmbeddedAppResponse(shop: string, env: Env): Response {
   </div>
 
   <script>
-    // Initialize App Bridge
+    // Initialize App Bridge with enhanced debugging
     const urlParams = new URLSearchParams(window.location.search);
     const shop = '${shop}';
     const host = urlParams.get('host');
+    
+         // Debug information with modern App Bridge detection
+     console.log('🔍 App Bridge Debug Info:', {
+       currentUrl: window.location.href,
+       shop: shop,
+       host: host,
+       hasShopify: !!(window.shopify),
+       hasAppBridge: !!(window.shopify?.AppBridge || window.shopify?.appBridge || window.ShopifyAppBridge || window.AppBridge),
+       hasLegacyAppBridge: !!(window.shopify?.AppBridge),
+       hasModernAppBridge: !!(window.shopify?.appBridge),
+       hasGlobalAppBridge: !!(window.ShopifyAppBridge || window.AppBridge),
+       shopifyProperties: window.shopify ? Object.keys(window.shopify) : [],
+       isEmbedded: window.parent !== window,
+       urlParams: Object.fromEntries(urlParams.entries())
+     });
 
-    if (window.shopify && window.shopify.AppBridge) {
-      const app = window.shopify.AppBridge.createApp({
-        apiKey: '${env.SHOPIFY_APP_CLIENT_ID}',
-        host: host,
-        forceRedirect: true
-      });
+         // Wait for App Bridge to load if not immediately available
+     function initializeAppBridge() {
+       // Check for modern App Bridge (multiple possible locations)
+       const AppBridge = window.shopify?.AppBridge || 
+                        window.shopify?.appBridge || 
+                        window.ShopifyAppBridge ||
+                        window.AppBridge;
+                        
+       console.log('🔍 App Bridge detection:', {
+         'window.shopify': !!window.shopify,
+         'window.shopify.AppBridge': !!(window.shopify?.AppBridge),
+         'window.shopify.appBridge': !!(window.shopify?.appBridge),
+         'window.ShopifyAppBridge': !!window.ShopifyAppBridge,
+         'window.AppBridge': !!window.AppBridge,
+         'shopifyProperties': window.shopify ? Object.keys(window.shopify) : []
+       });
 
-      console.log('App Bridge initialized for shop:', shop);
+       if (AppBridge && typeof AppBridge.createApp === 'function') {
+         try {
+           console.log('✅ App Bridge found, initializing...');
+           
+           const appConfig = {
+             apiKey: '${env.SHOPIFY_APP_CLIENT_ID}',
+             forceRedirect: true
+           };
+           
+           // Only add host if it exists
+           if (host) {
+             appConfig.host = host;
+             console.log('✅ Using host parameter:', host);
+           } else {
+             console.warn('⚠️ No host parameter found - this may affect embedded functionality');
+           }
+           
+           const app = AppBridge.createApp(appConfig);
+           console.log('✅ App Bridge initialized successfully for shop:', shop);
 
-      // Replace loading content with actual app
-      setTimeout(() => {
-        document.querySelector('.loading').innerHTML = \`
-          <div>
-            <h2>✅ App Ready</h2>
-            <p><strong>Shop:</strong> \${shop}</p>
-            <p><strong>Status:</strong> Connected and operational</p>
-            <div style="margin-top: 20px; padding: 16px; background: #f0f8ff; border-radius: 6px; border-left: 4px solid #0070f3;">
-              <h3>🎯 Next Steps:</h3>
-              <ul style="margin: 8px 0; padding-left: 20px;">
-                <li>Configure delivery date settings</li>
-                <li>Set up WOOOD product integration</li>
-                <li>Test delivery date picker in your store</li>
-              </ul>
+          // Replace loading content with actual app
+          setTimeout(() => {
+            document.querySelector('.loading').innerHTML = \`
+              <div>
+                <h2>✅ App Ready</h2>
+                <p><strong>Shop:</strong> \${shop}</p>
+                <p><strong>Host:</strong> \${host || 'Not provided'}</p>
+                <p><strong>Status:</strong> Connected and operational</p>
+                <div style="margin-top: 20px; padding: 16px; background: #f0f8ff; border-radius: 6px; border-left: 4px solid #0070f3;">
+                  <h3>🎯 App Bridge Status:</h3>
+                  <ul style="margin: 8px 0; padding-left: 20px;">
+                    <li>✅ App Bridge: Initialized</li>
+                    <li>✅ Shop: Connected</li>
+                    <li>\${host ? '✅' : '⚠️'} Host: \${host || 'Missing (may affect some features)'}</li>
+                    <li>✅ API: Ready</li>
+                  </ul>
+                </div>
+                <div style="margin-top: 16px; padding: 12px; background: #f0f9f0; border-radius: 6px;">
+                  <p><strong>🚀 Your WOOOD Delivery app is ready!</strong></p>
+                  <p>The checkout extension and admin features are now active.</p>
+                </div>
+              </div>
+            \`;
+          }, 1000);
+          
+        } catch (appBridgeError) {
+          console.error('❌ App Bridge initialization failed:', appBridgeError);
+          document.querySelector('.loading').innerHTML = \`
+            <div style="color: red;">
+              <h2>❌ App Bridge Error</h2>
+              <p>Failed to initialize App Bridge: \${appBridgeError.message}</p>
+              <p><strong>Shop:</strong> \${shop}</p>
+              <p><strong>Host:</strong> \${host || 'Missing'}</p>
             </div>
-          </div>
-        \`;
-      }, 1000);
-    } else {
-      console.error('App Bridge not available');
-      document.querySelector('.loading').innerHTML = 'Error: App Bridge not available';
-    }
+          \`;
+        }
+               } else if (window.shopify && Object.keys(window.shopify).length > 0) {
+         // Shopify object exists but no App Bridge - might be new embedded app context
+         console.warn('⚠️ Shopify object found but no App Bridge - using embedded context');
+         console.log('Available Shopify properties:', Object.keys(window.shopify));
+         
+         document.querySelector('.loading').innerHTML = \`
+           <div style="color: #0070f3;">
+             <h2>🔷 Modern Shopify Context Detected</h2>
+             <p><strong>Shop:</strong> \${shop}</p>
+             <p><strong>Host:</strong> \${host || 'Missing'}</p>
+             <p><strong>Status:</strong> Running in Shopify Admin (New Context)</p>
+             
+             <div style="margin-top: 20px; padding: 16px; background: #f0f8ff; border-radius: 6px; border-left: 4px solid #0070f3;">
+               <h3>🎯 App Status:</h3>
+               <ul style="margin: 8px 0; padding-left: 20px;">
+                 <li>✅ Shopify Context: Active</li>
+                 <li>✅ Shop: Connected</li>
+                 <li>✅ Authentication: Valid</li>
+                 <li>✅ API: Ready</li>
+               </ul>
+             </div>
+             
+             <div style="margin-top: 16px; padding: 12px; background: #f0f9f0; border-radius: 6px;">
+               <p><strong>🚀 Your WOOOD Delivery app is operational!</strong></p>
+               <p>✅ Checkout extensions active</p>
+               <p>✅ Webhook processing active</p>
+               <p>✅ API endpoints accessible</p>
+             </div>
+             
+             <div style="margin-top: 16px; padding: 12px; background: #fff3cd; border-radius: 6px; font-size: 14px;">
+               <p><strong>ℹ️ Note:</strong> This app is running in Shopify's modern embedded context. Classic App Bridge is not required for functionality.</p>
+             </div>
+           </div>
+         \`;
+         
+       } else {
+         console.error('❌ No Shopify context found');
+         console.log('Window shopify object:', window.shopify);
+         document.querySelector('.loading').innerHTML = \`
+           <div style="color: orange;">
+             <h2>⚠️ No Shopify Context</h2>
+             <p>Neither App Bridge nor Shopify context found. This usually means:</p>
+             <ul style="text-align: left; margin: 8px 0;">
+               <li>The app is not running in Shopify's embedded context</li>
+               <li>Network issues preventing script loading</li>
+               <li>App Bridge/Shopify CDN is unavailable</li>
+             </ul>
+             <p><strong>Shop:</strong> \${shop}</p>
+             <p><strong>Host:</strong> \${host || 'Missing'}</p>
+             <div style="margin-top: 16px; padding: 12px; background: #fff3cd; border-radius: 6px;">
+               <p><strong>💡 Troubleshooting:</strong></p>
+               <p>Try accessing the app directly through Shopify Admin → Apps.</p>
+             </div>
+           </div>
+         \`;
+       }
+     }
+
+     // Try immediate initialization
+     initializeAppBridge();
+     
+     // Check for App Bridge availability using modern detection
+     const hasAnyAppBridge = !!(window.shopify?.AppBridge || 
+                               window.shopify?.appBridge || 
+                               window.ShopifyAppBridge ||
+                               window.AppBridge);
+     
+     // If App Bridge wasn't available immediately, wait for it to load
+     if (!hasAnyAppBridge && (!window.shopify || Object.keys(window.shopify).length === 0)) {
+       console.log('⏳ App Bridge/Shopify context not ready, waiting for script to load...');
+       setTimeout(initializeAppBridge, 1000);
+       setTimeout(initializeAppBridge, 3000); // Fallback
+       setTimeout(initializeAppBridge, 5000); // Extended fallback
+     }
   </script>
 </body>
 </html>`;

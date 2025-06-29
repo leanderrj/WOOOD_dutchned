@@ -1,6 +1,6 @@
-import { 
-  ShippingMethodData, 
-  ShippingMethodProcessingResult 
+import {
+  ShippingMethodData,
+  ShippingMethodProcessingResult
 } from '../types/common';
 import { Env, WorkerConfig } from '../types/env';
 import { requireAuthentication, SessionRequest } from '../middleware/sessionAuth';
@@ -78,8 +78,8 @@ export async function processShippingMethodSelection(
 
     try {
       await env.DELIVERY_CACHE.put(
-        storageKey, 
-        JSON.stringify(storedData), 
+        storageKey,
+        JSON.stringify(storedData),
         {
           expirationTtl: 86400 // 24 hours for order processing
         }
@@ -120,7 +120,7 @@ export async function processShippingMethodSelection(
     }
 
     const executionTime = Date.now() - startTime;
-    
+
     if (logger && config.features.enableRequestLogging) {
       logger.info('Successfully processed shipping method selection', {
         requestId: internalRequestId,
@@ -147,7 +147,7 @@ export async function processShippingMethodSelection(
 
   } catch (error: any) {
     const executionTime = Date.now() - startTime;
-    
+
     if (logger) {
       logger.error('Error processing shipping method selection', {
         requestId: internalRequestId,
@@ -193,7 +193,7 @@ export async function getShippingMethodData(
     for (const key of possibleKeys) {
       try {
         const storedData = await env.DELIVERY_CACHE.get(key, { type: 'json' }) as ShippingMethodData | null;
-        
+
         if (storedData) {
           if (logger && config.features.enableRequestLogging) {
             logger.info('Retrieved shipping method data from KV', {
@@ -218,9 +218,9 @@ export async function getShippingMethodData(
         }
       }
     }
-    
+
     if (logger) {
-      logger.warn('Shipping method data not found in KV', { 
+      logger.warn('Shipping method data not found in KV', {
         requestId: internalRequestId,
         identifier,
         keysAttempted: possibleKeys
@@ -260,7 +260,7 @@ export async function handleShippingMethodRequest(
   }
 
   const authResult = await requireAuthentication(request, env, config, logger, requestId || 'unknown');
-  
+
   // If authentication failed, return the error response
   if (authResult instanceof Response) {
       logger.warn('Shipping method API access denied - authentication required', {
@@ -280,7 +280,7 @@ export async function handleShippingMethodRequest(
       requestId,
       sessionId: authenticatedRequest.sessionId
     });
-    
+
     return new Response(JSON.stringify({
       success: false,
       error: 'INVALID_SESSION',
@@ -324,14 +324,14 @@ export async function handleShippingMethodRequest(
       }
 
       const result = await processShippingMethodSelection(data, env, config, logger, requestId);
-      
+
       // Add shop context to response
       const responseData = {
         ...result,
         shop: shopDomain,
         authenticatedShop: shopDomain
       };
-      
+
       return new Response(JSON.stringify(responseData), {
         status: result.success ? 200 : 400,
         headers: {
@@ -358,7 +358,7 @@ export async function handleShippingMethodRequest(
       }
 
       const data = await getShippingMethodData(identifier, env, config, logger, requestId);
-      
+
       if (data) {
         return new Response(JSON.stringify({
           success: true,
@@ -403,7 +403,7 @@ export async function handleShippingMethodRequest(
 
   } catch (error: any) {
     const executionTime = Date.now() - startTime;
-    
+
     logger.error('Failed to handle authenticated shipping method request', {
         requestId,
       shop: shopDomain,
@@ -417,8 +417,8 @@ export async function handleShippingMethodRequest(
     return new Response(JSON.stringify({
       success: false,
       error: 'INTERNAL_ERROR',
-      message: config.features.enableDetailedErrors 
-        ? error.message 
+      message: config.features.enableDetailedErrors
+        ? error.message
         : 'Internal server error',
       shop: shopDomain,
       requestId,
@@ -503,12 +503,12 @@ function sanitizeDataForLogging(data: any): any {
   }
 
   const sanitized = { ...data };
-  
+
   // Remove or truncate potentially sensitive fields
   if (sanitized.customerId) {
     sanitized.customerId = sanitized.customerId.substring(0, 8) + '...';
   }
-  
+
   return sanitized;
 }
 
@@ -559,4 +559,4 @@ async function processOrderMetafields(
     }
     // Don't throw here - metafield processing failure shouldn't fail the main operation
   }
-} 
+}

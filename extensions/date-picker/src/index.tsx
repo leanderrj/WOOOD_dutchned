@@ -212,10 +212,23 @@ function useCartProductsShippingMethod(cartLines: any[], apiBaseUrl: string, sho
         console.log('📦 Received shipping methods:', shippingMethods);
 
         Object.entries(shippingMethods).forEach(([productId, methodData]) => {
-          if (methodData && methodData.number > highestNumber) {
-            highestNumber = methodData.number;
-            highestOriginalValue = methodData.value;
-            console.log(`🚚 Product ${productId} has shipping method: ${methodData.value} (number: ${methodData.number})`);
+          if (methodData && methodData.value) {
+            // Extract number from the value string (e.g., "30 - EXPEDITIE STANDAARD" -> 30)
+            let extractedNumber = methodData.number || 0;
+
+            // If number is 0, try to extract from the value string
+            if (extractedNumber === 0 && methodData.value) {
+              const numberMatch = methodData.value.match(/^(\d+)/);
+              if (numberMatch) {
+                extractedNumber = parseInt(numberMatch[1], 10);
+              }
+            }
+
+            if (extractedNumber >= highestNumber) { // Changed > to >= to include 0
+              highestNumber = extractedNumber;
+              highestOriginalValue = methodData.value;
+              console.log(`🚚 Product ${productId} has shipping method: ${methodData.value} (number: ${extractedNumber})`);
+            }
           }
         });
 
@@ -317,13 +330,7 @@ function DeliveryDatePicker() {
   const { shop } = useApi();
 
   // Get API base URL from centralized configuration
-  // Priority: Extension settings override environment variables
-  const apiBaseUrl = useMemo(() => {
-    if (typeof settings.api_base_url === 'string' && settings.api_base_url.trim()) {
-      return settings.api_base_url.trim();
-    }
-    return config.apiBaseUrl;
-  }, [settings.api_base_url]);
+  const apiBaseUrl = config.apiBaseUrl;
 
   // Use centralized configuration with extension settings override
   const enableMockMode = typeof settings.enable_mock_mode === 'boolean' ? settings.enable_mock_mode : config.enableMockMode;
@@ -511,16 +518,7 @@ function DeliveryDatePicker() {
           </Banner>
         )}
 
-        {/* Show React Query metadata when available */}
-        {metadata && (
-          <Banner status="info">
-            <Text size="small">
-              {metadata.mockDataEnabled ? 'Mock data' : 'Live data'} •
-              {metadata.cacheHit ? ' Cache hit' : ' Fresh fetch'} •
-              {metadata.responseTime && ` ${metadata.responseTime}ms`}
-            </Text>
-          </Banner>
-        )}
+
 
         {/* Show week number filtering info when enabled */}
         {enableWeekNumberFiltering && minimumDeliveryDate && (
@@ -531,13 +529,7 @@ function DeliveryDatePicker() {
           </Banner>
         )}
 
-        {selectedShippingMethod && (
-          <View>
-            <Text size="small" appearance="subdued">
-              {t('selected_shipping_method', { method: selectedShippingMethod })}
-            </Text>
-          </View>
-        )}
+
 
         {/* Show loading state */}
         {isLoading && (

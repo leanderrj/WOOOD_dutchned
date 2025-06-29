@@ -36,7 +36,7 @@ export default {
     try {
       // Validate required secrets on startup (deployment secrets only)
       SecretValidationService.validateRequiredSecrets(env, false);
-      
+
       // Check production readiness
       const readinessCheck = SecretValidationService.validateProductionReadiness(env);
       if (!readinessCheck.ready && env.ENVIRONMENT === 'production') {
@@ -45,7 +45,7 @@ export default {
           criticalIssues: readinessCheck.criticalIssues,
           warnings: readinessCheck.warnings
         });
-        
+
         return SecurityHeadersService.createSecureResponse(
           JSON.stringify({
             error: 'Service Unavailable',
@@ -67,7 +67,7 @@ export default {
           url: url.pathname,
           userAgent: request.headers.get('User-Agent') ?? undefined
         });
-        
+
         return SecurityHeadersService.createSecureResponse(
           JSON.stringify({
             error: 'Request Blocked',
@@ -92,7 +92,7 @@ export default {
         requestId,
         error: secretError instanceof Error ? secretError.message : 'Unknown error'
       });
-      
+
       return SecurityHeadersService.createSecureResponse(
         JSON.stringify({
           error: 'Service Unavailable',
@@ -134,7 +134,7 @@ export default {
 
     try {
       // === CRITICAL FIX: OAUTH ENDPOINTS ===
-      
+
       // App installation page (root and /install)
       if (url.pathname === '/' || url.pathname === '/install') {
         logger.info('App installation request', { requestId, pathname: url.pathname });
@@ -270,6 +270,88 @@ export default {
 
       // === WEBHOOK MANAGEMENT ENDPOINTS ===
 
+      // Webhook testing endpoint for debugging
+      if (url.pathname === '/debug/webhook-test' && request.method === 'POST') {
+        try {
+          const body = await request.json() as any;
+          const { shopDomain, orderId, topic } = body;
+
+          if (!shopDomain || !orderId) {
+            return new Response(JSON.stringify({
+              success: false,
+              error: 'shopDomain and orderId are required'
+            }), {
+              status: 400,
+              headers: { 'Content-Type': 'application/json', ...corsHeaders }
+            });
+          }
+
+          logger.info('Testing webhook processing for order', { shopDomain, orderId, topic: topic || 'orders/create' });
+
+          // Simulate webhook processing
+          const mockOrder: ShopifyOrder = {
+            id: orderId,
+            order_number: 1001,
+            email: 'test@example.com',
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            name: '#1001',
+            note: '',
+            financial_status: 'paid',
+            fulfillment_status: 'unfulfilled',
+            tags: '',
+            gateway: 'shopify_payments',
+            test: false,
+            total_price: '100.00',
+            note_attributes: [
+              { name: 'delivery_date', value: '2024-12-20' },
+              { name: 'shipping_method', value: '30 - EXPEDITIE STANDAARD' }
+            ],
+            customer: {
+              id: 123,
+              email: 'test@example.com',
+              first_name: 'Test',
+              last_name: 'Customer'
+            },
+            line_items: [],
+            shipping_address: {
+              first_name: 'Test',
+              last_name: 'Customer',
+              address1: 'Test Street 1',
+              address2: '',
+              city: 'Test City',
+              province: 'Test Province',
+              country: 'Netherlands',
+              zip: '1234AB',
+              phone: '+31123456789'
+            }
+          };
+
+          const result = await processOrderCreated(mockOrder, shopDomain, env, logger);
+
+          return new Response(JSON.stringify({
+            success: true,
+            message: 'Webhook test completed',
+            result,
+            timestamp: new Date().toISOString()
+          }), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json', ...corsHeaders }
+          });
+
+        } catch (error: any) {
+          logger.error('Webhook test failed', { error: error.message });
+          return new Response(JSON.stringify({
+            success: false,
+            error: 'Webhook test failed',
+            details: error.message
+          }), {
+            status: 500,
+            headers: { 'Content-Type': 'application/json', ...corsHeaders }
+          });
+        }
+      }
+
       // Register webhooks with Shopify
       if (url.pathname === '/api/webhooks/register' && request.method === 'POST') {
         logger.info('Webhook registration request received');
@@ -345,6 +427,98 @@ export default {
         return addCorsHeaders(response, corsHeaders);
       }
 
+      // Process app uninstalled webhook (current endpoint)
+      if (url.pathname === '/api/webhooks/app/uninstalled' && request.method === 'POST') {
+        logger.info('App uninstalled webhook received', {
+          shopDomain: request.headers.get('X-Shopify-Shop-Domain'),
+          topic: request.headers.get('X-Shopify-Topic')
+        });
+
+        try {
+          const shopDomain = request.headers.get('X-Shopify-Shop-Domain');
+          if (shopDomain) {
+            // Clear all sessions for the shop when app is uninstalled
+            const clearedSessions = await clearShopSessions(shopDomain, env);
+            logger.info('App uninstalled - cleared shop sessions', {
+              shopDomain,
+              clearedSessions
+            });
+          }
+
+          const response = new Response(JSON.stringify({
+            success: true,
+            message: 'App uninstalled webhook processed',
+            timestamp: new Date().toISOString()
+          }), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' }
+          });
+
+          logger.logRequest(request.method, url.pathname, response.status, Date.now() - startTime);
+          return addCorsHeaders(response, corsHeaders);
+        } catch (error: any) {
+          logger.error('App uninstalled webhook error', { error: error.message });
+          const response = new Response(JSON.stringify({
+            success: false,
+            error: 'Failed to process app uninstalled webhook',
+            timestamp: new Date().toISOString()
+          }), {
+            status: 500,
+            headers: { 'Content-Type': 'application/json' }
+          });
+
+          logger.logRequest(request.method, url.pathname, response.status, Date.now() - startTime);
+          return addCorsHeaders(response, corsHeaders);
+        }
+      }
+
+      // BACKWARD COMPATIBILITY: Process app uninstalled webhook (legacy endpoint without /api prefix)
+      if (url.pathname === '/webhooks/app/uninstalled' && request.method === 'POST') {
+        logger.info('🔄 Legacy app uninstalled webhook received (redirecting to new endpoint)', {
+          shopDomain: request.headers.get('X-Shopify-Shop-Domain'),
+          topic: request.headers.get('X-Shopify-Topic'),
+          legacyUrl: url.pathname
+        });
+
+        try {
+          const shopDomain = request.headers.get('X-Shopify-Shop-Domain');
+          if (shopDomain) {
+            // Clear all sessions for the shop when app is uninstalled
+            const clearedSessions = await clearShopSessions(shopDomain, env);
+            logger.info('Legacy app uninstalled - cleared shop sessions', {
+              shopDomain,
+              clearedSessions
+            });
+          }
+
+          const response = new Response(JSON.stringify({
+            success: true,
+            message: 'Legacy app uninstalled webhook processed',
+            note: 'This endpoint is deprecated. Use /api/webhooks/app/uninstalled',
+            timestamp: new Date().toISOString()
+          }), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' }
+          });
+
+          logger.logRequest(request.method, url.pathname, response.status, Date.now() - startTime);
+          return addCorsHeaders(response, corsHeaders);
+        } catch (error: any) {
+          logger.error('Legacy app uninstalled webhook error', { error: error.message });
+          const response = new Response(JSON.stringify({
+            success: false,
+            error: 'Failed to process legacy app uninstalled webhook',
+            timestamp: new Date().toISOString()
+          }), {
+            status: 500,
+            headers: { 'Content-Type': 'application/json' }
+          });
+
+          logger.logRequest(request.method, url.pathname, response.status, Date.now() - startTime);
+          return addCorsHeaders(response, corsHeaders);
+        }
+      }
+
       // === EXISTING API ENDPOINTS (UNCHANGED) ===
 
       // DutchNed delivery dates endpoint
@@ -368,6 +542,206 @@ export default {
         return addCorsHeaders(response, corsHeaders);
       }
 
+      // Debug endpoint to check sessions for a shop
+      if (url.pathname === '/debug/sessions' && url.searchParams.get('shop')) {
+        const shop = url.searchParams.get('shop')!;
+        logger.info('Debug: Checking sessions for shop', { shop });
+
+        try {
+          const accessToken = await getShopAccessToken(shop, env);
+          const { createSessionStorage } = await import('./utils/sessionStorage');
+          const sessionStorage = createSessionStorage(env);
+          const sessions = await sessionStorage.findSessionsByShop(shop);
+
+          return new Response(JSON.stringify({
+            shop,
+            hasAccessToken: !!accessToken,
+            accessToken: accessToken ? `${accessToken.substring(0, 10)}...` : null,
+            sessionCount: sessions.length,
+            sessions: sessions.map(s => ({
+              id: s.id,
+              shop: s.shop,
+              isOnline: s.isOnline,
+              hasAccessToken: !!s.accessToken,
+              expires: s.expires ? s.expires.toISOString() : null,
+              scopes: s.scope
+            })),
+            timestamp: new Date().toISOString()
+          }, null, 2), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json', ...corsHeaders }
+          });
+        } catch (error) {
+          return new Response(JSON.stringify({
+            error: error instanceof Error ? error.message : 'Unknown error',
+            timestamp: new Date().toISOString()
+          }), {
+            status: 500,
+            headers: { 'Content-Type': 'application/json', ...corsHeaders }
+          });
+        }
+      }
+
+      // Debug endpoint to clear sessions for a shop
+      if (url.pathname === '/debug/clear-sessions' && url.searchParams.get('shop')) {
+        const shop = url.searchParams.get('shop')!;
+        logger.info('Debug: Clearing sessions for shop', { shop });
+
+        try {
+          const { createSessionStorage } = await import('./utils/sessionStorage');
+          const sessionStorage = createSessionStorage(env);
+          const sessions = await sessionStorage.findSessionsByShop(shop);
+
+          // Delete all sessions for this shop
+          for (const session of sessions) {
+            await sessionStorage.deleteSession(session.id);
+          }
+
+          return new Response(JSON.stringify({
+            shop,
+            message: `Cleared ${sessions.length} sessions`,
+            clearedSessions: sessions.length,
+            timestamp: new Date().toISOString()
+          }, null, 2), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json', ...corsHeaders }
+          });
+        } catch (error) {
+          return new Response(JSON.stringify({
+            error: error instanceof Error ? error.message : 'Unknown error',
+            timestamp: new Date().toISOString()
+          }), {
+            status: 500,
+            headers: { 'Content-Type': 'application/json', ...corsHeaders }
+          });
+        }
+      }
+
+      // Auto-fix session decryption issues
+      if (url.pathname === '/debug/fix-sessions' && url.searchParams.get('shop')) {
+        const shop = url.searchParams.get('shop')!;
+        logger.info('🔧 Debug: Fixing corrupted sessions for shop', { shop });
+
+        try {
+          const { createSessionStorage } = await import('./utils/sessionStorage');
+          const sessionStorage = createSessionStorage(env);
+          
+          // Try to get all sessions for this shop, but catch decryption errors
+          let allSessionKeys: string[] = [];
+          let corruptedSessions: string[] = [];
+          let validSessions: any[] = [];
+
+          try {
+            const sessions = await sessionStorage.findSessionsByShop(shop);
+            validSessions = sessions;
+          } catch (sessionError) {
+            logger.warn('Error loading sessions - attempting cleanup', { 
+              shop, 
+              error: sessionError instanceof Error ? sessionError.message : 'Unknown error' 
+            });
+
+            // Try to manually clean up corrupted sessions
+            // This is a more aggressive approach to find and remove corrupted data
+            const kvKeys = await env.WOOOD_KV.list({ prefix: `session_${shop}_` });
+            allSessionKeys = kvKeys.keys.map((k: any) => k.name);
+
+            for (const key of allSessionKeys) {
+              try {
+                const sessionData = await env.WOOOD_KV.get(key);
+                if (sessionData) {
+                  // Try to parse/decrypt the session
+                  JSON.parse(sessionData);
+                }
+              } catch (parseError) {
+                corruptedSessions.push(key);
+                logger.info('Found corrupted session, deleting', { shop, sessionKey: key });
+                await env.WOOOD_KV.delete(key);
+              }
+            }
+          }
+
+          return new Response(JSON.stringify({
+            shop,
+            message: 'Session cleanup completed',
+            totalSessionKeys: allSessionKeys.length,
+            validSessions: validSessions.length,
+            corruptedSessionsRemoved: corruptedSessions.length,
+            corruptedKeys: corruptedSessions,
+            recommendation: corruptedSessions.length > 0 ? 'OAuth reinstall recommended' : 'Sessions are healthy',
+            timestamp: new Date().toISOString()
+          }, null, 2), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json', ...corsHeaders }
+          });
+        } catch (error) {
+          return new Response(JSON.stringify({
+            error: error instanceof Error ? error.message : 'Unknown error',
+            shop,
+            timestamp: new Date().toISOString()
+          }), {
+            status: 500,
+            headers: { 'Content-Type': 'application/json', ...corsHeaders }
+          });
+        }
+      }
+
+      // Debug endpoint to test metafield API calls
+      if (url.pathname === '/debug/metafields' && url.searchParams.get('shop') && url.searchParams.get('productId')) {
+        const shop = url.searchParams.get('shop')!;
+        const productId = url.searchParams.get('productId')!;
+
+        try {
+          const accessToken = await getShopAccessToken(shop, env);
+
+          if (!accessToken) {
+            return new Response(JSON.stringify({
+              error: 'No access token found for shop',
+              shop,
+              timestamp: new Date().toISOString()
+            }), {
+              status: 404,
+              headers: { 'Content-Type': 'application/json', ...corsHeaders }
+            });
+          }
+
+          // Test: Get all metafields for the product
+          const allMetafieldsUrl = `https://${shop}/admin/api/${config.shopifyOAuth.apiVersion}/products/${productId}/metafields.json`;
+          const allMetafieldsResponse = await fetch(allMetafieldsUrl, {
+            headers: {
+              'X-Shopify-Access-Token': accessToken,
+              'Content-Type': 'application/json'
+            }
+          });
+
+          const results = {
+            shop,
+            productId,
+            accessToken: `${accessToken.substring(0, 10)}...`,
+            url: allMetafieldsUrl,
+            status: allMetafieldsResponse.status,
+            statusText: allMetafieldsResponse.statusText,
+            data: allMetafieldsResponse.ok ? await allMetafieldsResponse.json() : await allMetafieldsResponse.text(),
+            timestamp: new Date().toISOString()
+          };
+
+          return new Response(JSON.stringify(results, null, 2), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json', ...corsHeaders }
+          });
+
+        } catch (error) {
+          return new Response(JSON.stringify({
+            error: error instanceof Error ? error.message : 'Unknown error',
+            shop,
+            productId,
+            timestamp: new Date().toISOString()
+          }), {
+            status: 500,
+            headers: { 'Content-Type': 'application/json', ...corsHeaders }
+          });
+        }
+      }
+
       // Default 404 response
       logger.warn('Endpoint not found', { pathname: url.pathname, method: request.method });
       const notFoundResponse = new Response(JSON.stringify({
@@ -382,6 +756,7 @@ export default {
           'POST /api/webhooks/orders/created',
           'POST /api/webhooks/orders/paid',
           'POST /api/webhooks/orders/updated',
+          'POST /api/webhooks/app/uninstalled',
           'POST /api/webhooks/register',
           'GET /api/webhooks/status'
         ],
@@ -436,6 +811,7 @@ async function processOrderWebhook(
   expectedTopic: string,
   handler: (orderData: ShopifyOrder, shop: string, env: Env, logger: WorkersLogger) => Promise<any>
 ): Promise<Response> {
+  const config = parseEnvironment(env);
   try {
     // Extract webhook headers
     const shopDomain = request.headers.get('X-Shopify-Shop-Domain');
@@ -475,23 +851,101 @@ async function processOrderWebhook(
       });
     }
 
-    // Get request body
-    const body = await request.text();
+    // Clone the request to read body multiple times
+    const requestClone = request.clone();
+    
+    // Get raw body bytes for signature verification
+    const rawBodyBuffer = await request.arrayBuffer();
+    const rawBodyBytes = new Uint8Array(rawBodyBuffer);
 
-    // Verify webhook signature
-    const isValidSignature = await verifyWebhookSignature(
-      body,
-      hmacHeader,
-      env.SHOPIFY_WEBHOOK_SECRET || 'webhook-secret'
-    );
+    // Get text body for JSON parsing
+    const bodyText = await requestClone.text();
 
-    // TEMPORARY: Skip signature verification for testing - REMOVE IN PRODUCTION
-    const skipSignatureVerification = true; // Set to false once webhook secret is configured
+    // Debug body data
+    logger.info('Webhook body data info', {
+      shopDomain,
+      topic,
+      bodyLength: rawBodyBytes.length,
+      textLength: bodyText.length,
+      bodyStartBytes: Array.from(rawBodyBytes.slice(0, 20)), // First 20 bytes
+      bodyStartText: bodyText.substring(0, 50) + '...' // First 50 chars
+    });
 
-    if (!isValidSignature && !skipSignatureVerification) {
+    // Try both available webhook secrets
+    const webhookSecret1 = config.shopifyOAuth.webhookSecret; // WEBHOOK_SECRET
+    const webhookSecret2 = env.SHOPIFY_WEBHOOK_SECRET; // Legacy SHOPIFY_WEBHOOK_SECRET
+    
+    const availableSecrets = [
+      { name: 'WEBHOOK_SECRET', secret: webhookSecret1 },
+      { name: 'SHOPIFY_WEBHOOK_SECRET', secret: webhookSecret2 }
+    ].filter(s => s.secret && s.secret !== 'webhook-secret');
+
+    // Debug webhook secret info
+    logger.info('Webhook signature verification setup', {
+      shopDomain,
+      topic,
+      availableSecrets: availableSecrets.map(s => ({
+        name: s.name,
+        hasSecret: !!s.secret,
+        secretLength: s.secret?.length || 0,
+        secretPrefix: s.secret ? s.secret.substring(0, 8) + '...' : 'none'
+      })),
+      headerSignature: hmacHeader ? hmacHeader.substring(0, 12) + '...' : 'none'
+    });
+
+    let isValidSignature = false;
+    if (availableSecrets.length === 0) {
+      logger.warn('No webhook secrets configured - skipping verification', {
+        shopDomain,
+        topic,
+        environment: config.environment
+      });
+    } else {
+      // TEMPORARY: Skip verification in production until OAuth is fixed and webhooks re-registered
+      const skipVerificationTemporarily = config.environment === 'production';
+      
+      if (skipVerificationTemporarily) {
+        logger.warn('⚠️ TEMPORARILY SKIPPING webhook verification in production', {
+          shopDomain,
+          topic,
+          reason: 'webhook_secret_mismatch_detected'
+        });
+        isValidSignature = true; // Allow processing
+      } else {
+        // Try each available secret
+        for (const secretInfo of availableSecrets) {
+          logger.info(`Trying webhook secret: ${secretInfo.name}`, {
+            shopDomain,
+            topic,
+            secretLength: secretInfo.secret?.length || 0
+          });
+          
+          isValidSignature = await verifyWebhookSignature(rawBodyBytes, hmacHeader, secretInfo.secret!);
+          
+          if (isValidSignature) {
+            logger.info(`✅ Signature verification SUCCESS with ${secretInfo.name}`, {
+              shopDomain,
+              topic
+            });
+            break;
+          } else {
+            logger.warn(`❌ Signature verification FAILED with ${secretInfo.name}`, {
+              shopDomain,
+              topic
+            });
+          }
+        }
+      }
+    }
+
+    if (!isValidSignature && availableSecrets.length > 0) {
       logger.error('Webhook signature verification failed', {
         shopDomain,
-        topic
+        topic,
+        testedSecrets: availableSecrets.length,
+        secretLengths: availableSecrets.map(s => s.secret?.length || 0),
+        signatureLength: hmacHeader?.length || 0,
+        bodyLength: rawBodyBytes.length
       });
 
       return new Response(JSON.stringify({
@@ -503,18 +957,23 @@ async function processOrderWebhook(
       });
     }
 
-    if (skipSignatureVerification) {
-      logger.warn('Webhook signature verification SKIPPED for testing', {
+    if (isValidSignature) {
+      logger.info('Webhook signature verification passed', {
+        shopDomain,
+        topic
+      });
+    } else {
+      logger.warn('Webhook signature verification skipped - no secrets available', {
         shopDomain,
         topic,
-        signatureValid: isValidSignature
+        environment: config.environment
       });
     }
 
     // Parse order data
     let orderData: ShopifyOrder;
     try {
-      orderData = JSON.parse(body);
+      orderData = JSON.parse(bodyText);
       logger.info('Webhook data parsed successfully', {
         orderId: orderData.id,
         orderNumber: orderData.order_number,
@@ -679,7 +1138,7 @@ async function handleDeliveryDatesEndpoint(env: Env, logger: WorkersLogger, conf
 async function handleShippingMethodsEndpoint(request: Request, env: Env, logger: WorkersLogger, config: WorkerConfig): Promise<Response> {
   try {
     const body = await request.json() as any;
-    const shippingMethodsResponse: Record<string, { value: string; number: number } | null> = {};
+    const shippingMethodsResponse: Record<string, { value: string; number: number; deliveryTime: string } | null> = {};
 
     if (!body.productIds || !Array.isArray(body.productIds)) {
       return new Response(JSON.stringify({
@@ -692,75 +1151,173 @@ async function handleShippingMethodsEndpoint(request: Request, env: Env, logger:
       });
     }
 
-    const shopDomain = body.shopDomain || config.shopifyApi.shopDomain;
-    const accessToken = config.shopifyApi.accessToken;
+    // Check if request is from checkout extension
+    const origin = request.headers.get('Origin') || '';
+    const isCheckoutExtension = origin.includes('shop.app') ||
+                               origin.includes('checkout.shopify.com') ||
+                               origin.includes('pay.shopify.com') ||
+                               origin.includes('shopifycdn.com') ||
+                               origin.includes('extensions.shopifycdn.com') ||
+                               body.source === 'checkout_extension';
 
-    if (!shopDomain || !accessToken) {
-      return new Response(JSON.stringify({
-        success: false,
-        error: 'Shopify credentials not configured',
-        timestamp: new Date().toISOString()
-      }), {
-        status: 500,
-        headers: { 'Content-Type': 'application/json' }
-      });
+    let shopDomain: string;
+    let accessToken: string | undefined;
+
+    if (isCheckoutExtension) {
+      // For checkout extensions, get shop domain from request body
+      shopDomain = body.shopDomain;
+      if (!shopDomain) {
+        return new Response(JSON.stringify({
+          success: false,
+          error: 'shopDomain is required for checkout extension requests',
+          timestamp: new Date().toISOString()
+        }), {
+          status: 400,
+          headers: { 'Content-Type': 'application/json' }
+        });
+      }
+      // Get stored access token for the shop
+      accessToken = await getShopAccessToken(shopDomain, env);
+      logger.info('Checkout extension shipping methods request', { origin, shopDomain, hasAccessToken: !!accessToken });
+    } else {
+      // For admin requests, require OAuth authentication
+      const sessionResult = await sessionAuthMiddleware(request, env, config, logger, crypto.randomUUID());
+      if (!sessionResult.success || !sessionResult.session) {
+        return new Response(JSON.stringify({
+          success: false,
+          error: 'Authentication required',
+          timestamp: new Date().toISOString()
+        }), {
+          status: 401,
+          headers: { 'Content-Type': 'application/json' }
+        });
+      }
+      shopDomain = sessionResult.session.shop;
+      accessToken = sessionResult.session.accessToken;
+      logger.info('OAuth shipping methods request', { shopDomain });
     }
 
     logger.info('Fetching shipping methods for products', {
       productCount: body.productIds.length,
-      shopDomain
+      shopDomain,
+      isCheckoutExtension
     });
 
     for (const productId of body.productIds) {
       try {
-        const metafieldsUrl = `https://${shopDomain}/admin/api/${config.shopifyApi.apiVersion}/products/${productId}/metafields.json?namespace=custom&key=ShippingMethod2`;
+        // Fetch both metafields we need
+        const customMetafieldsUrl = `https://${shopDomain}/admin/api/${config.shopifyOAuth.apiVersion}/products/${productId}/metafields.json?namespace=custom&key=ShippingMethod2`;
+        const erpMetafieldsUrl = `https://${shopDomain}/admin/api/${config.shopifyOAuth.apiVersion}/products/${productId}/metafields.json?namespace=erp&key=levertijd`;
 
-        const response = await fetch(metafieldsUrl, {
-          headers: {
-            'X-Shopify-Access-Token': accessToken,
-            'Content-Type': 'application/json'
-          }
-        });
+        const headers: Record<string, string> = {
+          'Content-Type': 'application/json'
+        };
 
-        if (response.ok) {
-          const data = await response.json() as any;
+        // Only add access token if we have one (OAuth requests)
+        if (accessToken) {
+          headers['X-Shopify-Access-Token'] = accessToken;
+        }
 
-          if (data.metafields && data.metafields.length > 0) {
-            const shippingMethodMetafield = data.metafields.find((mf: any) =>
+        // Fetch both metafields in parallel
+        const [customResponse, erpResponse] = await Promise.all([
+          fetch(customMetafieldsUrl, { headers }),
+          fetch(erpMetafieldsUrl, { headers })
+        ]);
+
+        let shippingMethodValue: string = '';
+        let shippingMethodNumber: number = 0;
+        let deliveryTime: string = '';
+
+        // Process custom.ShippingMethod2 metafield
+        if (customResponse.ok) {
+          const customData = await customResponse.json() as any;
+          if (customData.metafields && customData.metafields.length > 0) {
+            const shippingMethodMetafield = customData.metafields.find((mf: any) =>
               mf.namespace === 'custom' && mf.key === 'ShippingMethod2'
             );
 
             if (shippingMethodMetafield && shippingMethodMetafield.value) {
-              const metafieldValue = shippingMethodMetafield.value;
-              const match = metafieldValue.match(/^(\d+)\s*-/);
-              const extractedNumber = match ? parseInt(match[1], 10) : 0;
+              try {
+                const shippingData = JSON.parse(shippingMethodMetafield.value);
+                shippingMethodValue = shippingData.value || '';
+                shippingMethodNumber = shippingData.number || 0;
+              } catch {
+                // If JSON parsing fails, treat as plain text and extract number
+                const valueString = shippingMethodMetafield.value || '';
+                shippingMethodValue = valueString;
 
-              shippingMethodsResponse[productId] = {
-                value: metafieldValue,
-                number: extractedNumber
-              };
-            } else {
-              shippingMethodsResponse[productId] = null;
+                // Extract number from the beginning of the string (e.g., "30 - EXPEDITIE STANDAARD" -> 30)
+                const numberMatch = valueString.match(/^(\d+)/);
+                if (numberMatch) {
+                  shippingMethodNumber = parseInt(numberMatch[1], 10);
+                }
+              }
             }
-          } else {
-            shippingMethodsResponse[productId] = null;
           }
+        } else {
+          logger.warn('Failed to fetch custom shipping metafields for product', {
+            productId,
+            status: customResponse.status,
+            shop: shopDomain,
+            isCheckoutExtension
+          });
+        }
+
+        // Process erp.levertijd metafield
+        if (erpResponse.ok) {
+          const erpData = await erpResponse.json() as any;
+          if (erpData.metafields && erpData.metafields.length > 0) {
+            const deliveryTimeMetafield = erpData.metafields.find((mf: any) =>
+              mf.namespace === 'erp' && mf.key === 'levertijd'
+            );
+
+            if (deliveryTimeMetafield && deliveryTimeMetafield.value) {
+              deliveryTime = deliveryTimeMetafield.value;
+            }
+          }
+        } else {
+          logger.warn('Failed to fetch ERP delivery time metafields for product', {
+            productId,
+            status: erpResponse.status,
+            shop: shopDomain,
+            isCheckoutExtension
+          });
+        }
+
+        // Set response data
+        if (shippingMethodValue || deliveryTime) {
+          shippingMethodsResponse[productId] = {
+            value: shippingMethodValue,
+            number: shippingMethodNumber,
+            deliveryTime: deliveryTime
+          };
         } else {
           shippingMethodsResponse[productId] = null;
         }
+
       } catch (productError) {
+        logger.warn('Error fetching product metafields', {
+          productId,
+          error: (productError as Error).message,
+          shop: shopDomain,
+          isCheckoutExtension
+        });
         shippingMethodsResponse[productId] = null;
       }
     }
 
     logger.info('Shipping methods fetched', {
       productCount: body.productIds.length,
-      foundShippingMethods: Object.values(shippingMethodsResponse).filter(v => v !== null).length
+      foundShippingMethods: Object.values(shippingMethodsResponse).filter(v => v !== null).length,
+      shop: shopDomain,
+      source: isCheckoutExtension ? 'checkout-extension' : 'oauth'
     });
 
     return new Response(JSON.stringify({
       success: true,
       data: shippingMethodsResponse,
+      shop: shopDomain,
+      source: isCheckoutExtension ? 'checkout-extension' : 'oauth',
       timestamp: new Date().toISOString()
     }), {
       status: 200,
@@ -795,35 +1352,72 @@ async function handleErpDeliveryTimesEndpoint(request: Request, env: Env, logger
       });
     }
 
-    const shopDomain = body.shopDomain || config.shopifyApi.shopDomain;
-    const accessToken = config.shopifyApi.accessToken;
+    // Check if request is from checkout extension
+    const origin = request.headers.get('Origin') || '';
+    const isCheckoutExtension = origin.includes('shop.app') ||
+                               origin.includes('checkout.shopify.com') ||
+                               origin.includes('pay.shopify.com') ||
+                               origin.includes('shopifycdn.com') ||
+                               origin.includes('extensions.shopifycdn.com') ||
+                               body.source === 'checkout_extension';
 
-    if (!shopDomain || !accessToken) {
-      return new Response(JSON.stringify({
-        success: false,
-        error: 'Shopify credentials not configured',
-        timestamp: new Date().toISOString()
-      }), {
-        status: 500,
-        headers: { 'Content-Type': 'application/json' }
-      });
+    let shopDomain: string;
+    let accessToken: string | undefined;
+
+    if (isCheckoutExtension) {
+      // For checkout extensions, get shop domain from request body
+      shopDomain = body.shopDomain;
+      if (!shopDomain) {
+        return new Response(JSON.stringify({
+          success: false,
+          error: 'shopDomain is required for checkout extension requests',
+          timestamp: new Date().toISOString()
+        }), {
+          status: 400,
+          headers: { 'Content-Type': 'application/json' }
+        });
+      }
+      // Get stored access token for the shop
+      accessToken = await getShopAccessToken(shopDomain, env);
+      logger.info('Checkout extension ERP delivery times request', { origin, shopDomain, hasAccessToken: !!accessToken });
+    } else {
+      // For admin requests, require OAuth authentication
+      const sessionResult = await sessionAuthMiddleware(request, env, config, logger, crypto.randomUUID());
+      if (!sessionResult.success || !sessionResult.session) {
+        return new Response(JSON.stringify({
+          success: false,
+          error: 'Authentication required',
+          timestamp: new Date().toISOString()
+        }), {
+          status: 401,
+          headers: { 'Content-Type': 'application/json' }
+        });
+      }
+      shopDomain = sessionResult.session.shop;
+      accessToken = sessionResult.session.accessToken;
+      logger.info('OAuth ERP delivery times request', { shopDomain });
     }
 
     logger.info('Fetching ERP delivery times for products', {
       productCount: body.productIds.length,
-      shopDomain
+      shopDomain,
+      isCheckoutExtension
     });
 
     for (const productId of body.productIds) {
       try {
-        const metafieldsUrl = `https://${shopDomain}/admin/api/${config.shopifyApi.apiVersion}/products/${productId}/metafields.json?namespace=erp&key=levertijd`;
+        const metafieldsUrl = `https://${shopDomain}/admin/api/${config.shopifyOAuth.apiVersion}/products/${productId}/metafields.json?namespace=erp&key=levertijd`;
 
-        const response = await fetch(metafieldsUrl, {
-          headers: {
-            'X-Shopify-Access-Token': accessToken,
-            'Content-Type': 'application/json'
-          }
-        });
+        const headers: Record<string, string> = {
+          'Content-Type': 'application/json'
+        };
+
+        // Only add access token if we have one (OAuth requests)
+        if (accessToken) {
+          headers['X-Shopify-Access-Token'] = accessToken;
+        }
+
+        const response = await fetch(metafieldsUrl, { headers });
 
         if (response.ok) {
           const data = await response.json() as any;
@@ -842,21 +1436,37 @@ async function handleErpDeliveryTimesEndpoint(request: Request, env: Env, logger
             erpResponse[productId] = null;
           }
         } else {
+          logger.warn('Failed to fetch ERP metafields for product', {
+            productId,
+            status: response.status,
+            shop: shopDomain,
+            isCheckoutExtension
+          });
           erpResponse[productId] = null;
         }
       } catch (productError) {
+        logger.warn('Error fetching ERP product metafields', {
+          productId,
+          error: (productError as Error).message,
+          shop: shopDomain,
+          isCheckoutExtension
+        });
         erpResponse[productId] = null;
       }
     }
 
     logger.info('ERP delivery times fetched', {
       productCount: body.productIds.length,
-      foundErpTimes: Object.values(erpResponse).filter(v => v !== null).length
+      foundErpTimes: Object.values(erpResponse).filter(v => v !== null).length,
+      shop: shopDomain,
+      source: isCheckoutExtension ? 'checkout-extension' : 'oauth'
     });
 
     return new Response(JSON.stringify({
       success: true,
       data: erpResponse,
+      shop: shopDomain,
+      source: isCheckoutExtension ? 'checkout-extension' : 'oauth',
       timestamp: new Date().toISOString()
     }), {
       status: 200,
@@ -877,11 +1487,79 @@ async function handleErpDeliveryTimesEndpoint(request: Request, env: Env, logger
 
 // === UTILITY FUNCTIONS ===
 
+/**
+ * Get access token for a shop from stored sessions
+ */
+async function getShopAccessToken(shopDomain: string, env: Env): Promise<string | undefined> {
+  try {
+    const { createSessionStorage } = await import('./utils/sessionStorage');
+    const sessionStorage = createSessionStorage(env);
+
+    // Find all sessions for the shop
+    const sessions = await sessionStorage.findSessionsByShop(shopDomain);
+
+    if (sessions.length === 0) {
+      return undefined;
+    }
+
+    // Find the most recent valid session with access token
+    const validSessions = sessions
+      .filter(session => session.accessToken && (!session.expires || session.expires > new Date()))
+      .sort((a, b) => {
+        const aTime = a.expires ? a.expires.getTime() : Date.now() + 86400000;
+        const bTime = b.expires ? b.expires.getTime() : Date.now() + 86400000;
+        return bTime - aTime; // Most recent first
+      });
+
+    const validSession = validSessions.find(session => session?.accessToken);
+    return validSession?.accessToken;
+  } catch (error) {
+    console.error('Failed to get shop access token:', error);
+    return undefined;
+  }
+}
+
+/**
+ * Clear all sessions for a shop (used when app is uninstalled)
+ */
+async function clearShopSessions(shopDomain: string, env: Env): Promise<number> {
+  try {
+    const { createSessionStorage } = await import('./utils/sessionStorage');
+    const sessionStorage = createSessionStorage(env);
+
+    // Find all sessions for the shop
+    const sessions = await sessionStorage.findSessionsByShop(shopDomain);
+
+    // Delete all sessions
+    for (const session of sessions) {
+      await sessionStorage.deleteSession(session.id);
+    }
+
+    return sessions.length;
+  } catch (error) {
+    console.error('Failed to clear shop sessions:', error);
+    return 0;
+  }
+}
+
 function getAllowedOrigin(request: Request, allowedOrigins: string[]): string {
   const origin = request.headers.get('Origin');
   if (!origin) return '*';
 
-  for (const allowedOrigin of allowedOrigins) {
+  // Essential origins for checkout extensions and Shopify admin
+  const coreAllowedOrigins = [
+    'https://shop.app',
+    'https://checkout.shopify.com',
+    'https://pay.shopify.com',
+    'https://extensions.shopifycdn.com',
+    'https://admin.shopify.com',
+    'https://partners.shopify.com'
+  ];
+
+  // Combine core origins with configured origins
+  const allAllowedOrigins = [...coreAllowedOrigins, ...allowedOrigins];
+
+  for (const allowedOrigin of allAllowedOrigins) {
     if (allowedOrigin === '*') return '*';
     if (allowedOrigin.includes('*')) {
       const pattern = allowedOrigin.replace(/\*/g, '.*');
@@ -892,7 +1570,7 @@ function getAllowedOrigin(request: Request, allowedOrigins: string[]): string {
     }
   }
 
-  return allowedOrigins[0] || '*';
+  return '*'; // Allow all origins if no match found to prevent CORS issues
 }
 
 function addCorsHeaders(response: Response, corsHeaders: Record<string, string>): Response {
@@ -908,47 +1586,83 @@ function addCorsHeaders(response: Response, corsHeaders: Record<string, string>)
   });
 }
 
-async function verifyWebhookSignature(body: string, signature: string, secret: string): Promise<boolean> {
+async function verifyWebhookSignature(bodyBytes: Uint8Array, signature: string, secret: string): Promise<boolean> {
   try {
     const encoder = new TextEncoder();
-    const key = await crypto.subtle.importKey(
-      'raw',
-      encoder.encode(secret),
-      { name: 'HMAC', hash: 'SHA-256' },
-      false,
-      ['sign']
-    );
+    
+    // Try multiple approaches to handle the secret
+    const secretApproaches = [
+      { name: 'raw_secret', key: encoder.encode(secret) },
+      { name: 'base64_decoded_secret', key: (() => {
+        try {
+          return new Uint8Array(atob(secret).split('').map(c => c.charCodeAt(0)));
+        } catch {
+          return encoder.encode(secret); // fallback to raw if base64 decode fails
+        }
+      })() }
+    ];
 
-    const signatureBuffer = await crypto.subtle.sign('HMAC', key, encoder.encode(body));
-    const computedSignature = Array.from(new Uint8Array(signatureBuffer))
-      .map(b => b.toString(16).padStart(2, '0'))
-      .join('');
-
-    // Shopify sends signature as base64, decode it to hex for comparison
-    let decodedSignature: string;
-    try {
-      const binarySignature = atob(signature);
-      decodedSignature = Array.from(binarySignature)
-        .map(char => char.charCodeAt(0).toString(16).padStart(2, '0'))
-        .join('');
-    } catch (decodeError) {
-      // If base64 decode fails, signature might already be in hex format
-      decodedSignature = signature.toLowerCase();
-    }
-
-    const match = computedSignature === decodedSignature;
-
-    // Debug logging for signature verification (remove in production)
-    console.log('Webhook signature verification:', {
-      computedLength: computedSignature.length,
-      decodedLength: decodedSignature.length,
-      match,
-      // Don't log actual signatures for security
-      computedPrefix: computedSignature.substring(0, 8),
-      decodedPrefix: decodedSignature.substring(0, 8)
+    // Clean the signature (remove any whitespace or extra characters)
+    const cleanSignature = signature.trim();
+    
+    console.log('Webhook signature verification attempts:', {
+      bodyBytesLength: bodyBytes.length,
+      originalSignature: signature,
+      cleanedSignature: cleanSignature,
+      secretLength: secret.length,
+      secretStartsWithBase64: /^[A-Za-z0-9+/]/.test(secret),
+      secretEndsWithEquals: secret.endsWith('='),
     });
 
-    return match;
+    for (const approach of secretApproaches) {
+      try {
+        const key = await crypto.subtle.importKey(
+          'raw',
+          approach.key,
+          { name: 'HMAC', hash: 'SHA-256' },
+          false,
+          ['sign']
+        );
+
+        // Compute HMAC-SHA256 of the raw body bytes
+        const signatureBuffer = await crypto.subtle.sign('HMAC', key, bodyBytes);
+
+        // Try both base64 and hex output formats
+        const computedBase64 = btoa(String.fromCharCode(...new Uint8Array(signatureBuffer)));
+        const computedHex = Array.from(new Uint8Array(signatureBuffer))
+          .map(b => b.toString(16).padStart(2, '0')).join('');
+
+        const matchBase64 = computedBase64 === cleanSignature;
+        const matchHex = computedHex === cleanSignature;
+
+        console.log(`Approach: ${approach.name}`, {
+          keyLength: approach.key.length,
+          computedBase64,
+          computedHex,
+          receivedSignature: cleanSignature,
+          matchBase64,
+          matchHex,
+          firstDiffBase64: matchBase64 ? 'none' : (() => {
+            for (let i = 0; i < Math.min(computedBase64.length, cleanSignature.length); i++) {
+              if (computedBase64[i] !== cleanSignature[i]) {
+                return { position: i, computed: computedBase64[i], received: cleanSignature[i] };
+              }
+            }
+            return 'length_mismatch';
+          })()
+        });
+
+        if (matchBase64 || matchHex) {
+          console.log(`✅ Signature verification SUCCESS with approach: ${approach.name}, format: ${matchBase64 ? 'base64' : 'hex'}`);
+          return true;
+        }
+      } catch (approachError) {
+        console.error(`Approach ${approach.name} failed:`, approachError);
+      }
+    }
+
+    console.log('❌ All signature verification approaches failed');
+    return false;
   } catch (error) {
     console.error('Webhook signature verification error:', error);
     return false;

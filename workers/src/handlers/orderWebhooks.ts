@@ -492,50 +492,45 @@ function validateNoteAttributes(noteAttributes: {
 }
 
 /**
- * Get shop configuration from KV storage or fallback to environment variables
+ * Get shop configuration using session storage (same method as API endpoints)
  */
 async function getShopConfiguration(shop: string, env: Env): Promise<{
   accessToken: string;
   webhookId: string;
 } | null> {
   try {
-    // Try to get from any of the webhook configurations in KV storage first
-    const topics = ['orders/create', 'orders/paid', 'orders/updated'];
-    
-    for (const topic of topics) {
-      const configData = await env.DELIVERY_CACHE.get(`webhook:${shop}:${topic}`);
-      if (configData) {
-        const config = JSON.parse(configData);
-        return {
-          accessToken: config.accessToken,
-          webhookId: config.webhookId
-        };
-      }
+    // Use the same session storage method as the API endpoints
+    const { createSessionStorage } = await import('../utils/sessionStorage');
+    const sessionStorage = createSessionStorage(env);
+
+    // Find all sessions for the shop
+    const sessions = await sessionStorage.findSessionsByShop(shop);
+
+    if (sessions.length === 0) {
+      return null;
     }
+
+    // Find the most recent valid session with access token
+    const validSessions = sessions
+      .filter(session => session.accessToken && (!session.expires || session.expires > new Date()))
+      .sort((a, b) => {
+        const aTime = a.expires ? a.expires.getTime() : Date.now() + 86400000;
+        const bTime = b.expires ? b.expires.getTime() : Date.now() + 86400000;
+        return bTime - aTime; // Most recent first
+      });
+
+    const validSession = validSessions.find(session => session?.accessToken);
     
-    // Fallback to environment variables if KV storage doesn't have configuration
-    // This allows webhook processing to work even without proper registration
-    if (env.SHOPIFY_ACCESS_TOKEN && env.SHOPIFY_SHOP_DOMAIN) {
-      // Verify the shop domain matches (for security)
-      if (shop === env.SHOPIFY_SHOP_DOMAIN || shop.replace('.myshopify.com', '') === env.SHOPIFY_SHOP_DOMAIN.replace('.myshopify.com', '')) {
-        return {
-          accessToken: env.SHOPIFY_ACCESS_TOKEN,
-          webhookId: 'env-fallback' // Placeholder since we don't have the actual webhook ID
-        };
-      }
+    if (!validSession || !validSession.accessToken) {
+      return null;
     }
-    
-    return null;
+
+    return {
+      accessToken: validSession.accessToken,
+      webhookId: 'session-based' // We don't need the actual webhook ID for processing
+    };
   } catch (error) {
-    // Final fallback - try environment variables even if there's an error
-    if (env.SHOPIFY_ACCESS_TOKEN && env.SHOPIFY_SHOP_DOMAIN) {
-      if (shop === env.SHOPIFY_SHOP_DOMAIN || shop.replace('.myshopify.com', '') === env.SHOPIFY_SHOP_DOMAIN.replace('.myshopify.com', '')) {
-        return {
-          accessToken: env.SHOPIFY_ACCESS_TOKEN,
-          webhookId: 'env-fallback'
-        };
-      }
-    }
+    console.error('Failed to get shop configuration:', error);
     return null;
   }
 }
@@ -635,12 +630,12 @@ async function createOrderMetafieldsFromNoteAttributes(
       shop,
       accessToken,
       orderId,
-      'custom.ShippingMethod',
+      'custom.ShippingMethod2',
       noteAttributes.shipping_method,
       'single_line_text_field'
     );
     results.push({
-      key: 'custom.ShippingMethod',
+      key: 'custom.ShippingMethod2',
       success: result.success,
       ...(result.error && { error: result.error })
     });

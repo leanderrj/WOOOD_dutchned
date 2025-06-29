@@ -13,10 +13,10 @@ graph LR
     DEV[Development<br/>Local Testing]
     STAGING[Staging<br/>Integration Testing]
     PROD[Production<br/>Live System]
-    
+
     DEV --> STAGING
     STAGING --> PROD
-    
+
     style DEV fill:#45b7d1
     style STAGING fill:#ffa726
     style PROD fill:#66bb6a
@@ -234,18 +234,18 @@ jobs:
       - uses: actions/setup-node@v3
         with:
           node-version: '18'
-      
+
       - name: Install dependencies
         run: npm ci
-      
+
       - name: Run tests
         run: npm run test:ci
-      
+
       - name: Deploy to staging
         run: wrangler publish --env staging
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-      
+
       - name: Run E2E tests
         run: npm run test:e2e:staging
         env:
@@ -417,13 +417,13 @@ node -e "console.log(require('crypto').randomBytes(64).toString('base64'))"
 async function migrateEnvironmentData() {
   // 1. Export from source environment
   const sourceData = await exportKVData(sourceEnv);
-  
+
   // 2. Transform data if needed
   const transformedData = transformData(sourceData);
-  
+
   // 3. Import to target environment
   await importKVData(targetEnv, transformedData);
-  
+
   // 4. Verify migration
   await verifyMigration(sourceEnv, targetEnv);
 }

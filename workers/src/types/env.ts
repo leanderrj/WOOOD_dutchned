@@ -8,7 +8,7 @@ export interface Env {
 
   // DutchNed API configuration
   DUTCHNED_API_URL: string;
-  WOOOD_DUTCHNED_TOKEN: string;
+
 
   // Shopify OAuth App configuration
   SHOPIFY_APP_CLIENT_ID: string;
@@ -16,17 +16,15 @@ export interface Env {
   SHOPIFY_APP_CLIENT_SECRET: string; // Production secret (replaces WOOOD_OAUTH_CLIENT_SECRET)
   SHOPIFY_APP_URL: string;
   SHOPIFY_API_VERSION: string;
-  SHOPIFY_WEBHOOK_SECRET?: string;
-  WEBHOOK_SECRET: string; // Production webhook secret
+  SHOPIFY_WEBHOOK_SECRET?: string; // Legacy webhook secret (still in production)
+  WEBHOOK_SECRET: string; // Consolidated webhook secret
 
   // Security secrets
   SESSION_SECRET: string; // Session encryption secret
   API_ENCRYPTION_KEY: string; // API data encryption key
   DUTCHNED_API_CREDENTIALS: string; // DutchNed API authentication
 
-  // Legacy Shopify Admin API configuration (deprecated - use OAuth instead)
-  SHOPIFY_SHOP_DOMAIN?: string;
-  SHOPIFY_ACCESS_TOKEN?: string;
+
 
   // Feature flags
   USE_MOCK_DELIVERY_DATES: string;
@@ -44,7 +42,7 @@ export interface Env {
   ENABLE_WEBHOOK_NOTIFICATIONS: string;
   ENABLE_DEBUG_LOGGING: string;
   ENABLE_VERBOSE_RESPONSES: string;
-  ENABLE_DUTCHNED_API: string;
+
   ENABLE_SHIPPING_METHOD_PROCESSING: string;
 
   // CORS configuration
@@ -88,14 +86,7 @@ export interface WorkerConfig {
     appUrl: string;
     apiVersion: string;
     scopes: string[];
-    webhookSecret?: string;
-  };
-  // Legacy configuration (deprecated)
-  shopifyApi: {
-    shopDomain: string;
-    accessToken: string;
-    apiVersion: string;
-    timeout: number;
+    webhookSecret: string; // Always required for webhook processing
   };
   cache: {
     duration: number;
@@ -144,7 +135,7 @@ export function parseEnvironment(env: Env): WorkerConfig {
     environment: env.ENVIRONMENT || 'development',
     dutchNedApi: {
       url: env.DUTCHNED_API_URL || 'https://eekhoorn-connector.dutchned.com/api/delivery-dates/available',
-      credentials: env.WOOOD_DUTCHNED_TOKEN || '',
+      credentials: env.DUTCHNED_API_CREDENTIALS || '',
       timeout: parseInt(env.API_TIMEOUT || '10000', 10),
       maxRetries: parseInt(env.MAX_RETRIES || '3', 10),
     },
@@ -154,23 +145,26 @@ export function parseEnvironment(env: Env): WorkerConfig {
       appUrl: env.SHOPIFY_APP_URL || 'https://woood-production.leander-4e0.workers.dev',
       apiVersion: env.SHOPIFY_API_VERSION || '2025-04',
       scopes: ['read_products', 'read_orders', 'write_orders'],
-      ...(env.SHOPIFY_WEBHOOK_SECRET && { webhookSecret: env.SHOPIFY_WEBHOOK_SECRET }),
-    },
-    // Legacy configuration (deprecated)
-    shopifyApi: {
-      shopDomain: env.SHOPIFY_SHOP_DOMAIN || '',
-      accessToken: env.SHOPIFY_ACCESS_TOKEN || '',
-      apiVersion: env.SHOPIFY_API_VERSION || '2025-04',
-      timeout: parseInt(env.API_TIMEOUT || '10000', 10),
+      webhookSecret: env.WEBHOOK_SECRET || 'webhook-secret', // Fallback for development
     },
     cache: {
       duration: parseInt(env.CACHE_DURATION || '300000', 10), // 5 minutes
       enabled: env.ENABLE_CACHING === 'true',
     },
     cors: {
-      origins: (env.CORS_ORIGINS || 'https://shop.app,https://checkout.shopify.com,https://*.myshopify.com')
-        .split(',')
-        .map(origin => origin.trim()),
+      origins: (() => {
+        const corsOrigins = env.CORS_ORIGINS || 'https://shop.app,https://checkout.shopify.com,https://*.myshopify.com';
+        const parsedOrigins = corsOrigins.split(',').map(origin => origin.trim());
+
+        // Temporary debug logging
+        console.log('CORS Origins Parsing:', {
+          env_CORS_ORIGINS: env.CORS_ORIGINS,
+          corsOrigins,
+          parsedOrigins
+        });
+
+        return parsedOrigins;
+      })(),
     },
     rateLimit: {
       enabled: env.ENABLE_RATE_LIMITING === 'true',
@@ -193,7 +187,7 @@ export function parseEnvironment(env: Env): WorkerConfig {
       enableWebhookNotifications: env.ENABLE_WEBHOOK_NOTIFICATIONS === 'true',
       enableDebugLogging: env.ENABLE_DEBUG_LOGGING === 'true',
       enableVerboseResponses: env.ENABLE_VERBOSE_RESPONSES === 'true',
-      enableDutchNedApi: env.ENABLE_DUTCHNED_API !== 'false', // Default to true
+      enableDutchNedApi: true, // Always enabled
       enableShippingMethodProcessing: env.ENABLE_SHIPPING_METHOD_PROCESSING === 'true',
     },
     endpoints: {

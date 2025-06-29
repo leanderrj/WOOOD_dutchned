@@ -78,7 +78,7 @@ interface NoteAttributeMapping {
     validator: 'date';
   };
   shipping_method: {
-    metafield: 'custom.ShippingMethod';
+    metafield: 'custom.ShippingMethod2';
     type: 'single_line_text_field';
     required: false;
     validator: 'text';
@@ -93,7 +93,7 @@ const NOTE_ATTRIBUTE_MAPPING: NoteAttributeMapping = {
     validator: 'date'
   },
   shipping_method: {
-    metafield: 'custom.ShippingMethod',
+    metafield: 'custom.ShippingMethod2',
     type: 'single_line_text_field',
     required: false,
     validator: 'text'
@@ -171,7 +171,7 @@ export class AttributeTransformService {
 
     // Transform valid attributes to metafields
     const metafields: OrderMetafield[] = [];
-    
+
     for (const [attributeName, attributeValue] of Object.entries(extractedAttributes)) {
       if (!attributeValue) continue;
 
@@ -187,7 +187,7 @@ export class AttributeTransformService {
 
       if (transformedValue) {
         const [namespace, key] = mapping.metafield.split('.');
-        
+
         metafields.push({
           namespace,
           key,
@@ -299,7 +299,7 @@ export class AttributeTransformService {
       if (attr.name === 'delivery_date' && attr.value.trim()) {
         extracted.delivery_date = attr.value.trim();
       }
-      
+
       if (attr.name === 'shipping_method' && attr.value.trim()) {
         extracted.shipping_method = attr.value.trim();
       }
@@ -312,8 +312,8 @@ export class AttributeTransformService {
    * Apply transformation rules based on attribute type
    */
   private applyTransformationRules(
-    attributeName: string, 
-    value: string, 
+    attributeName: string,
+    value: string,
     validator: string
   ): string | null {
     if (!value) return null;
@@ -321,10 +321,10 @@ export class AttributeTransformService {
     switch (validator) {
       case 'date':
         return this.transformDateValue(value);
-      
+
       case 'text':
         return this.transformTextValue(value);
-      
+
       default:
         return value;
     }
@@ -366,7 +366,7 @@ export class AttributeTransformService {
 
     // Trim whitespace
     const trimmed = value.trim();
-    
+
     // Check length limits
     if (trimmed.length > 255) {
       this.logger.warn('Text value exceeds maximum length, truncating', {
@@ -407,7 +407,7 @@ export class AttributeTransformService {
     // Check if date is in the past
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    
+
     if (date < today) {
       return {
         isValid: true,
@@ -618,4 +618,4 @@ export class AttributeTransformService {
       };
     }
   }
-} 
+}

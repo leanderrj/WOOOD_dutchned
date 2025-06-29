@@ -44,13 +44,6 @@ key = "levertijd"
 
 [extensions.settings]
 [[extensions.settings.fields]]
-key = "api_base_url"
-type = "single_line_text_field"
-name = "API Base URL"
-description = "Base URL for the delivery dates API (defaults to localhost for development)"
-default = "https://localhost:8787"
-
-[[extensions.settings.fields]]
 key = "enable_mock_mode"
 type = "boolean"
 name = "Enable Mock Mode"

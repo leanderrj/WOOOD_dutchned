@@ -1,24 +1,20 @@
 /**
  * Centralized environment configuration for the date-picker extension
- * All environment variables are managed through the env-sync process
+ * Uses production API URL as single source of truth
  */
 
 export const config = {
-  // API Configuration - uses environment variable set by env-sync
-  // Temporarily using production URL while troubleshooting local HTTPS Workers setup
-  apiBaseUrl: (import.meta as any).env?.VITE_API_BASE_URL || 'https://woood-production.leander-4e0.workers.dev',
+  // API Configuration - single instance using production URL
+  apiBaseUrl: 'https://woood-production.leander-4e0.workers.dev',
 
-  // Feature flags
-  enableMockMode: (import.meta as any).env?.VITE_ENABLE_MOCK_MODE === 'true',
-  debugMode: (import.meta as any).env?.VITE_DEBUG_MODE === 'true',
-
-  // Shopify Configuration
-  shopDomain: (import.meta as any).env?.VITE_SHOPIFY_SHOP_DOMAIN || '',
+  // Feature flags - defaults for production
+  enableMockMode: false,
+  debugMode: false,
 
   // Environment info (for logging/debugging)
-  environment: (import.meta as any).env?.MODE || 'development',
-  isDevelopment: (import.meta as any).env?.DEV === true,
-  isProduction: (import.meta as any).env?.PROD === true,
+  environment: 'production',
+  isDevelopment: false,
+  isProduction: true,
 } as const;
 
 /**

@@ -93,28 +93,26 @@ export async function handleHealthCheck(
       }
     }
 
-    // Test DutchNed API connection if enabled
-    if (config.features.enableDutchNedApi) {
-      try {
-        const apiTest = await testDutchNedAPIConnection(env, config, logger, requestId);
-        healthData.services!.dutchNedApi = apiTest.success ? 'available' : 'unavailable';
-        
-        if (logger && config.features.enableRequestLogging) {
-          logger.info('DutchNed API health check completed', {
-            requestId,
-            success: apiTest.success,
-            message: apiTest.message,
-            responseTime: apiTest.responseTime
-          });
-        }
-      } catch (apiError) {
-        healthData.services!.dutchNedApi = 'unavailable';
-        if (logger) {
-          logger.warn('DutchNed API health check failed', {
-            requestId,
-            error: (apiError as Error).message
-          });
-        }
+    // Test DutchNed API connection
+    try {
+      const apiTest = await testDutchNedAPIConnection(env, config, logger, requestId);
+      healthData.services!.dutchNedApi = apiTest.success ? 'available' : 'unavailable';
+      
+      if (logger && config.features.enableRequestLogging) {
+        logger.info('DutchNed API health check completed', {
+          requestId,
+          success: apiTest.success,
+          message: apiTest.message,
+          responseTime: apiTest.responseTime
+        });
+      }
+    } catch (apiError) {
+      healthData.services!.dutchNedApi = 'unavailable';
+      if (logger) {
+        logger.warn('DutchNed API health check failed', {
+          requestId,
+          error: (apiError as Error).message
+        });
       }
     }
 
