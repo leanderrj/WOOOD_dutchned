@@ -6,6 +6,7 @@
 api_version = "2025-04"
 
 [[extensions]]
+uid = "0f84f69f-bd5e-3dd2-55fb-4844bd456e469c48c67d"
 type = "ui_extension"
 name = "date-picker"
 handle = "date-picker"

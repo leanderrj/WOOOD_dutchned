@@ -1,4 +1,4 @@
-name = "woood-delivery-api"
+name = "woood-production"
 main = "src/index.ts"
 compatibility_date = "2024-12-11"
 compatibility_flags = ["nodejs_compat"]
@@ -45,7 +45,7 @@ preview_id = "a119d3d1b509421a844d6e96fe1a8356"
 # ============================================================================
 
 [env.production]
-name = "woood-delivery-api"
+name = "woood-production"
 
 [env.production.vars]
 ENVIRONMENT = "production"
@@ -92,13 +92,6 @@ head_sampling_rate = 0.01
 # wrangler secret put SESSION_SECRET --env production
 # wrangler secret put WEBHOOK_SECRET --env production
 # wrangler secret put API_ENCRYPTION_KEY --env production
-
-# ============================================================================
-# BUILD AND DEPLOYMENT CONFIGURATION
-# ============================================================================
-
-[build]
-command = ""
 
 # ============================================================================
 # ANALYTICS AND MONITORING

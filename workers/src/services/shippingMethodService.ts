@@ -405,14 +405,14 @@ export async function handleShippingMethodRequest(
     const executionTime = Date.now() - startTime;
     
     logger.error('Failed to handle authenticated shipping method request', {
-      requestId,
+        requestId,
       shop: shopDomain,
-      error: error.message,
-      errorStack: error.stack,
-      executionTime,
-      method,
-      pathname: url.pathname
-    });
+        error: error.message,
+        errorStack: error.stack,
+        executionTime,
+        method,
+        pathname: url.pathname
+      });
 
     return new Response(JSON.stringify({
       success: false,

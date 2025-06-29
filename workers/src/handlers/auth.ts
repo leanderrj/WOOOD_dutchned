@@ -33,11 +33,11 @@ export async function handleOAuthStart(
 
     if (!shop) {
       return new Response(
-        JSON.stringify({
+        JSON.stringify({ 
           error: 'Missing shop parameter',
           message: 'Shop domain is required to start OAuth flow'
         }),
-        {
+        { 
           status: 400,
           headers: { 'Content-Type': 'application/json' }
         }
@@ -48,11 +48,11 @@ export async function handleOAuthStart(
     const validatedShop = OAuthUtils.extractShopDomain(shop || '');
     if (!validatedShop) {
       return new Response(
-        JSON.stringify({
+        JSON.stringify({ 
           error: 'Invalid shop domain',
           message: 'Shop domain must be a valid Shopify domain'
         }),
-        {
+        { 
           status: 400,
           headers: { 'Content-Type': 'application/json' }
         }
@@ -80,11 +80,11 @@ export async function handleOAuthStart(
     });
 
     return new Response(
-      JSON.stringify({
+      JSON.stringify({ 
         error: 'OAuth initiation failed',
         message: 'Unable to start OAuth flow. Please try again.'
       }),
-      {
+      { 
         status: 500,
         headers: { 'Content-Type': 'application/json' }
       }
@@ -136,7 +136,7 @@ export async function handleOAuthCallback(
         hasCode: !!code,
         hasState: !!state
       });
-
+      
       return createOAuthErrorResponse(
         'Invalid OAuth Callback',
         'Missing required parameters. Please try installing the app again.',
@@ -191,7 +191,7 @@ export async function handleAppInstallation(
 ): Promise<Response> {
   const url = new URL(request.url);
   const shop = url.searchParams.get('shop');
-
+  
   logger.info('Legacy app installation request', {
     requestId,
     shop: shop ?? undefined,
@@ -201,7 +201,7 @@ export async function handleAppInstallation(
   // Redirect to modern OAuth flow
   const oauthUrl = new URL(request.url);
   oauthUrl.pathname = '/auth/start';
-
+  
   return Response.redirect(oauthUrl.toString(), 302);
 }
 
@@ -330,54 +330,54 @@ function createOAuthSuccessResponse(session: Session, isNewInstallation: boolean
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>WOOOD Delivery - Installation ${isNewInstallation ? 'Complete' : 'Updated'}</title>
   <script src="https://cdn.shopify.com/shopifycloud/app-bridge.js"></script>
-  <style>
-    body { 
+    <style>
+        body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; 
-      margin: 0;
-      padding: 20px;
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      min-height: 100vh;
-    }
-    .container { 
-      background: white;
-      padding: 40px;
-      border-radius: 12px;
-      box-shadow: 0 10px 30px rgba(0,0,0,0.2);
-      text-align: center;
-      max-width: 600px;
-      width: 100%;
-    }
+            margin: 0;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+        }
+        .container {
+            background: white;
+            padding: 40px;
+            border-radius: 12px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            text-align: center;
+            max-width: 600px;
+            width: 100%;
+        }
     .success { 
       background: #e7f5e7; 
       border: 1px solid #4caf50; 
       border-radius: 4px; 
       padding: 15px; 
-      margin-bottom: 20px;
-    }
-    .installation-badge {
-      display: inline-block;
-      background: ${isNewInstallation ? '#48bb78' : '#ed8936'};
-      color: white;
-      padding: 8px 16px;
-      border-radius: 20px;
-      font-size: 14px;
-      font-weight: 600;
-      margin-bottom: 20px;
-    }
+            margin-bottom: 20px;
+        }
+        .installation-badge {
+            display: inline-block;
+            background: ${isNewInstallation ? '#48bb78' : '#ed8936'};
+            color: white;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 14px;
+            font-weight: 600;
+            margin-bottom: 20px;
+        }
     .redirect-info {
-      background: #f7fafc;
-      padding: 20px;
-      border-radius: 8px;
-      margin: 24px 0;
-      border-left: 4px solid #4299e1;
-    }
-  </style>
+            background: #f7fafc;
+            padding: 20px;
+            border-radius: 8px;
+            margin: 24px 0;
+            border-left: 4px solid #4299e1;
+        }
+    </style>
 </head>
 <body>
-  <div class="container">
+    <div class="container">
     <div class="success">
       <h2>✅ Installation ${isNewInstallation ? 'Complete' : 'Updated'}</h2>
       <div class="installation-badge">${isNewInstallation ? 'NEW INSTALLATION' : 'UPDATE COMPLETE'}</div>
@@ -385,10 +385,10 @@ function createOAuthSuccessResponse(session: Session, isNewInstallation: boolean
       <div class="redirect-info">
         <p><strong>Redirecting to app dashboard...</strong></p>
         <p>You can access the app anytime from your Shopify Admin → Apps section.</p>
-      </div>
+        </div>
     </div>
   </div>
-  <script>
+    <script>
     // Initialize App Bridge and redirect to main app
     const urlParams = new URLSearchParams(window.location.search);
     const host = urlParams.get('host');
@@ -413,11 +413,11 @@ function createOAuthSuccessResponse(session: Session, isNewInstallation: boolean
       }, 3000);
     } else {
       // Fallback if App Bridge is not available
-      setTimeout(() => {
+        setTimeout(() => {
         window.location.href = '/admin?shop=' + encodeURIComponent(shop);
       }, 3000);
     }
-  </script>
+    </script>
 </body>
 </html>`;
 
@@ -510,13 +510,13 @@ function createOAuthErrorResponse(title: string, message: string, shop?: string 
         <h1>${title}</h1>
         <p>${message}</p>
         ${shop ? `<p><strong>Shop:</strong> ${shop}</p>` : ''}
-
+        
         ${shop ? `
         <a href="/auth/start?shop=${encodeURIComponent(shop)}" class="retry-btn">
             🔄 Try Again
         </a>
         ` : ''}
-
+        
         <button class="close-btn" onclick="window.close()">
             Close Window
         </button>
@@ -531,4 +531,4 @@ function createOAuthErrorResponse(title: string, message: string, shop?: string 
       'Cache-Control': 'no-cache, no-store, must-revalidate'
     }
   });
-}
+} 
