@@ -305,7 +305,7 @@ export function AppContent({ shop }: AppContentProps) {
 
               <div style={{ marginBottom: '12px' }}>
                 <Text as="p">
-                  <strong>API Endpoint:</strong> https://woood-delivery-api.leander-4e0.workers.dev
+                  <strong>API Endpoint:</strong> https://woood-production.leander-4e0.workers.dev
                 </Text>
               </div>
 

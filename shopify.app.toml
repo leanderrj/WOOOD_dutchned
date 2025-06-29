@@ -2,7 +2,7 @@
 
 name = "woood-delivery-dates"
 client_id = "1c7701d2e09d4ede7616f35e13d472ef"
-application_url = "https://woood-delivery-api.leander-4e0.workers.dev"
+application_url = "https://woood-production.leander-4e0.workers.dev"
 embedded = true
 
 [access_scopes]
@@ -10,8 +10,8 @@ scopes = "read_products,read_orders,write_orders"
 
 [auth]
 redirect_urls = [
-  "https://woood-delivery-api.leander-4e0.workers.dev/auth/callback",
-  "https://woood-delivery-api.leander-4e0.workers.dev/auth/shopify/callback"
+  "https://woood-production.leander-4e0.workers.dev/auth/callback",
+  "https://woood-production.leander-4e0.workers.dev/auth/shopify/callback"
 ]
 
 [webhooks]

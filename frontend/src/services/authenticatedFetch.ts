@@ -11,7 +11,7 @@ export interface AuthenticatedFetchConfig {
 }
 
 const DEFAULT_CONFIG: AuthenticatedFetchConfig = {
-  baseUrl: 'https://woood-delivery-api.leander-4e0.workers.dev',
+  baseUrl: 'https://woood-production.leander-4e0.workers.dev',
   timeout: 15000
 };
 

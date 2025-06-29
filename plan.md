@@ -2094,7 +2094,7 @@ The WOOOD Delivery Date Management system is now **PRODUCTION READY** with all c
 - Security and CORS properly configured
 
 **🚀 Ready for Launch:**
-- Install on Shopify Plus stores using: `https://woood-delivery-api.leander-4e0.workers.dev/auth/start?shop=store-name.myshopify.com`
+- Install on Shopify Plus stores using: `https://woood-production.leander-4e0.workers.dev/auth/start?shop=store-name.myshopify.com`
 - Complete setup guide available in `SETUP.md`
 - System monitoring via admin dashboard
 - 100% test coverage with integration tests passed

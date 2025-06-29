@@ -59,7 +59,7 @@ vars = {
 [env.production]
 vars = {
   ENVIRONMENT = "production",
-  SHOPIFY_API_VERSION = "2025-04", 
+  SHOPIFY_API_VERSION = "2025-04",
   DUTCHNED_API_URL = "https://eekhoorn-connector.dutchned.com/api/delivery-dates/available",
   SHOPIFY_APP_CLIENT_ID = "1c7701d2e09d4ede7616f35e13d472ef"
 }
@@ -75,14 +75,14 @@ vars = {
    - Distribution: "Private" (initially)
 
 2. **Configure OAuth settings:**
-   - App URL: `https://woood-delivery-api.leander-4e0.workers.dev`
-   - Allowed redirection URLs: `https://woood-delivery-api.leander-4e0.workers.dev/auth/callback`
+   - App URL: `https://woood-production.leander-4e0.workers.dev`
+   - Allowed redirection URLs: `https://woood-production.leander-4e0.workers.dev/auth/callback`
    - Requested scopes: `read_products,read_orders,write_order_metafields`
 
 3. **Configure webhooks:**
-   - Orders create: `https://woood-delivery-api.leander-4e0.workers.dev/api/webhooks/orders/created`
-   - Orders paid: `https://woood-delivery-api.leander-4e0.workers.dev/api/webhooks/orders/paid`
-   - Orders updated: `https://woood-delivery-api.leander-4e0.workers.dev/api/webhooks/orders/updated`
+   - Orders create: `https://woood-production.leander-4e0.workers.dev/api/webhooks/orders/created`
+   - Orders paid: `https://woood-production.leander-4e0.workers.dev/api/webhooks/orders/paid`
+   - Orders updated: `https://woood-production.leander-4e0.workers.dev/api/webhooks/orders/updated`
 
 ### Step 4: Deploy Cloudflare Workers
 
@@ -138,7 +138,7 @@ yarn config:validate
 
 Test all systems are operational:
 ```bash
-curl https://woood-delivery-api.leander-4e0.workers.dev/health
+curl https://woood-production.leander-4e0.workers.dev/health
 ```
 
 Expected response:
@@ -159,19 +159,19 @@ Expected response:
 
 Test delivery dates:
 ```bash
-curl https://woood-delivery-api.leander-4e0.workers.dev/api/delivery-dates/available
+curl https://woood-production.leander-4e0.workers.dev/api/delivery-dates/available
 ```
 
 Test with product data:
 ```bash
-curl -X POST https://woood-delivery-api.leander-4e0.workers.dev/api/products/shipping-methods \
+curl -X POST https://woood-production.leander-4e0.workers.dev/api/products/shipping-methods \
   -H "Content-Type: application/json" \
   -d '{"productIds": ["8542690115751"], "shopDomain": "your-store.myshopify.com"}'
 ```
 
 ### Frontend Admin Test
 
-1. Access admin: `https://woood-delivery-api.leander-4e0.workers.dev/?shop=your-store.myshopify.com`
+1. Access admin: `https://woood-production.leander-4e0.workers.dev/?shop=your-store.myshopify.com`
 2. Complete OAuth flow
 3. Run system tests from dashboard
 4. Verify all indicators show green
@@ -182,7 +182,7 @@ curl -X POST https://woood-delivery-api.leander-4e0.workers.dev/api/products/shi
 
 1. **Generate installation URL:**
 ```
-https://woood-delivery-api.leander-4e0.workers.dev/auth/start?shop=your-dev-store.myshopify.com
+https://woood-production.leander-4e0.workers.dev/auth/start?shop=your-dev-store.myshopify.com
 ```
 
 2. **Complete OAuth flow** and verify permissions
@@ -334,4 +334,4 @@ Monitor these metrics daily:
 
 **Version:** 1.11.1
 **Last Updated:** June 2025
-**Status:** Production Ready ✅ 
+**Status:** Production Ready ✅

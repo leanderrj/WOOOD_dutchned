@@ -6,7 +6,7 @@
 export const config = {
   // API Configuration - uses environment variable set by env-sync
   // Temporarily using production URL while troubleshooting local HTTPS Workers setup
-  apiBaseUrl: (import.meta as any).env?.VITE_API_BASE_URL || 'https://woood-delivery-api.leander-4e0.workers.dev',
+  apiBaseUrl: (import.meta as any).env?.VITE_API_BASE_URL || 'https://woood-production.leander-4e0.workers.dev',
 
   // Feature flags
   enableMockMode: (import.meta as any).env?.VITE_ENABLE_MOCK_MODE === 'true',
