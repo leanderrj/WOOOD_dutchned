@@ -150,7 +150,7 @@ export function parseEnvironment(env: Env): WorkerConfig {
     },
     shopifyOAuth: {
       clientId: env.SHOPIFY_APP_CLIENT_ID || '',
-      clientSecret: env.WOOOD_OAUTH_CLIENT_SECRET || '',
+      clientSecret: env.SHOPIFY_APP_CLIENT_SECRET || env.WOOOD_OAUTH_CLIENT_SECRET || '',
       appUrl: env.SHOPIFY_APP_URL || 'https://woood-production.leander-4e0.workers.dev',
       apiVersion: env.SHOPIFY_API_VERSION || '2025-04',
       scopes: ['read_products', 'read_orders', 'write_orders'],
