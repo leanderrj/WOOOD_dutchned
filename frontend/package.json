@@ -13,7 +13,6 @@
     },
     "dependencies": {
         "@shopify/app-bridge-react": "^4.1.5",
-        "@shopify/app-bridge-utils": "^4.1.5",
         "@shopify/polaris": "^13.8.0",
         "@shopify/polaris-icons": "^9.3.0",
         "react": "^18.2.0",

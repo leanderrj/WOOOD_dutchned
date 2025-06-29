@@ -776,7 +776,7 @@ Refactor Shopify OAuth implementation to follow modern best practices using the 
 ### **Phase 3: Frontend App Bridge Integration (2 SP) ✅ COMPLETED**
 
 #### Task 10.7: App Bridge Configuration ✅ COMPLETED
-- ✅ Update root `package.json` with App Bridge dependencies (`@shopify/app-bridge-utils@3.5.1`)
+- ✅ Update root `package.json` with App Bridge dependencies (using @shopify/app-bridge-react for React components)
 - ✅ Create `frontend/` directory for admin interface with complete structure:
   - `package.json` with Vite, React, TypeScript, and Polaris dependencies
   - `vite.config.ts` for build configuration
