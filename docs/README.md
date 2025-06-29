@@ -6,6 +6,8 @@
 
 Get up and running quickly with step-by-step guides:
 
+- **[Setup Guide](SETUP.md)** - Complete production setup guide with all configuration steps
+- **[Build Commands](BUILD.md)** - Understanding build commands for different deployment scenarios
 - **[Installation Guide](quick-start/installation.md)** - Complete setup in 10 minutes
 - **[Local Development](quick-start/development.md)** - Start developing locally
 - **[First Deployment](quick-start/first-deployment.md)** - Deploy your first app
@@ -43,6 +45,7 @@ Technical references for developers:
 
 Best practices for development and contribution:
 
+- **[Build Commands](BUILD.md)** - Build commands for different scenarios (development, production, CI/CD)
 - **[Code Standards](development/code-standards.md)** - Coding standards and practices
 - **[Testing](development/testing.md)** - Testing strategies and tools
 - **[Debugging](development/debugging.md)** - Debugging and troubleshooting
@@ -104,14 +107,16 @@ The WOOOD Delivery Date Picker is an enterprise-grade Shopify checkout extension
 ## 🔗 Quick Navigation
 
 ### For New Users
-1. Start with [Installation Guide](quick-start/installation.md)
-2. Follow [Local Development](quick-start/development.md)
-3. Review [System Overview](architecture/overview.md)
+1. Start with [Setup Guide](SETUP.md) for complete production setup
+2. Follow [Installation Guide](quick-start/installation.md) for quick start
+3. Review [Build Commands](BUILD.md) to understand deployment options
+4. Check [System Overview](architecture/overview.md)
 
 ### For Developers
-1. Review [API Reference](api/endpoints.md)
-2. Check [Code Standards](development/code-standards.md)
-3. Read [Debugging Guide](development/debugging.md)
+1. Start with [Build Commands](BUILD.md) to understand build options
+2. Review [API Reference](api/endpoints.md)
+3. Check [Code Standards](development/code-standards.md)
+4. Read [Debugging Guide](development/debugging.md)
 
 ### For Operations Teams
 1. See [Health Monitoring](operations/health-monitoring.md)

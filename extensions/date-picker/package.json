@@ -5,6 +5,8 @@
     "scripts": {
         "shopify": "npm exec -- shopify",
         "build": "tsc && npm exec -- shopify app build",
+        "build:tsc": "tsc",
+        "build:standalone": "tsc",
         "dev": "npm exec -- shopify app dev",
         "preview": "npm exec -- shopify app function run",
         "type-check": "tsc --noEmit",

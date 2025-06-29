@@ -31,7 +31,7 @@ export function AppContent({ shop }: AppContentProps) {
   const loadSystemStats = async () => {
     try {
       const healthData = await apiClient.healthCheck();
-      const webhookStatus = await apiClient.getWebhookStatus(shop || undefined);
+      // const webhookStatus = await apiClient.getWebhookStatus(shop || undefined);
 
       setSystemStats({
         healthStatus: healthData.status === 'healthy' ? 'healthy' : 'degraded',
@@ -199,18 +199,14 @@ export function AppContent({ shop }: AppContentProps) {
                 </Badge>
 
                 <Badge tone={systemStats?.healthStatus === 'healthy' ? "success" : "critical"}>
-                  API: {systemStats?.healthStatus || 'Unknown'}
+                  {`API: ${systemStats?.healthStatus || 'Unknown'}`}
                 </Badge>
 
                 {shop && (
-                  <Badge tone="info">
-                    {shop}
-                  </Badge>
+                  <Badge tone="info">{`Store: ${shop}`}</Badge>
                 )}
 
-                <Badge tone="success">
-                  Production Ready
-                </Badge>
+                <Badge tone="success">Production Ready</Badge>
               </div>
 
               {systemStats && (
