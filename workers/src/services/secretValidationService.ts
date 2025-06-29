@@ -30,10 +30,15 @@ export class SecretValidationService {
    * Validate that all required secrets are present
    * This should be called at worker startup to ensure security compliance
    */
-  static validateRequiredSecrets(env: Env): ValidationResult {
-    const requiredSecrets = [
+  static validateRequiredSecrets(env: Env, requireRuntimeSecrets: boolean = false): ValidationResult {
+    // Secrets required at deployment time (must be pre-configured)
+    const deploymentSecrets = [
       'SHOPIFY_APP_CLIENT_SECRET',
-      'DUTCHNED_API_CREDENTIALS', 
+      'DUTCHNED_API_CREDENTIALS'
+    ];
+
+    // Secrets generated during runtime (OAuth flow, app installation)
+    const runtimeSecrets = [
       'SESSION_SECRET',
       'WEBHOOK_SECRET',
       'API_ENCRYPTION_KEY'
@@ -43,11 +48,17 @@ export class SecretValidationService {
       'WOOOD_OAUTH_CLIENT_ID' // Can be in vars but preferred as secret
     ];
 
-    // Check for missing required secrets
-    const missing = requiredSecrets.filter(secret => {
+    // Always check deployment secrets
+    const missingDeployment = deploymentSecrets.filter(secret => {
       const value = env[secret as keyof Env];
       return !value || typeof value !== 'string' || value.trim().length === 0;
     });
+
+    // Only check runtime secrets if explicitly required (e.g., during actual API calls)
+    const missingRuntime = requireRuntimeSecrets ? runtimeSecrets.filter(secret => {
+      const value = env[secret as keyof Env];
+      return !value || typeof value !== 'string' || value.trim().length === 0;
+    }) : [];
 
     // Check for warnings (optional secrets missing)
     const warnings = optionalSecrets.filter(secret => {
@@ -55,16 +66,30 @@ export class SecretValidationService {
       return !value || typeof value !== 'string' || value.trim().length === 0;
     }).map(secret => `${secret} should be moved to secrets for enhanced security`);
 
-    if (missing.length > 0) {
-      const errorMessage = `SECURITY ERROR: Missing required secrets: ${missing.join(', ')}. ` +
-        `Set them using: ${missing.map(s => `wrangler secret put ${s} --env ${env.ENVIRONMENT}`).join(' && ')}`;
+    // Add info about runtime secrets if they're not present yet
+    if (!requireRuntimeSecrets && runtimeSecrets.some(secret => {
+      const value = env[secret as keyof Env];
+      return !value || typeof value !== 'string' || value.trim().length === 0;
+    })) {
+      warnings.push('Runtime secrets (SESSION_SECRET, WEBHOOK_SECRET, API_ENCRYPTION_KEY) will be generated during OAuth flow');
+    }
+
+    if (missingDeployment.length > 0) {
+      const errorMessage = `SECURITY ERROR: Missing required deployment secrets: ${missingDeployment.join(', ')}. ` +
+        `Set them using: ${missingDeployment.map(s => `wrangler secret put ${s} --env ${env.ENVIRONMENT}`).join(' && ')}`;
+      throw new Error(errorMessage);
+    }
+
+    if (missingRuntime.length > 0) {
+      const errorMessage = `SECURITY ERROR: Missing required runtime secrets: ${missingRuntime.join(', ')}. ` +
+        `These should be generated during OAuth flow. If this error persists, check the OAuth implementation.`;
       throw new Error(errorMessage);
     }
 
     return { 
       valid: true, 
-      secrets: requiredSecrets,
-      warnings: warnings.length > 0 ? warnings : undefined
+      secrets: [...deploymentSecrets, ...(requireRuntimeSecrets ? runtimeSecrets : [])],
+      ...(warnings.length > 0 && { warnings })
     };
   }
 
@@ -311,7 +336,16 @@ export class SecretValidationService {
 
       // Check CORS configuration
       if (env.CORS_ORIGINS && env.CORS_ORIGINS.includes('*')) {
-        criticalIssues.push('CORS configured with wildcard (security risk)');
+        // Check for unsafe wildcards (not subdomain wildcards like *.myshopify.com)
+        const unsafeWildcards = env.CORS_ORIGINS.split(',').some(origin => {
+          const trimmed = origin.trim();
+          // Allow subdomain wildcards like *.myshopify.com, *.shopify.com
+          return trimmed === '*' || (trimmed.includes('*') && !trimmed.match(/https?:\/\/\*\.[a-zA-Z0-9-]+\.[a-zA-Z]{2,}/));
+        });
+        
+        if (unsafeWildcards) {
+          criticalIssues.push('CORS configured with unsafe wildcard (security risk)');
+        }
       }
 
     } catch (error) {

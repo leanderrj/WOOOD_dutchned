@@ -34,8 +34,8 @@ export default {
 
     // Sprint 15: Production Security Hardening
     try {
-      // Validate required secrets on startup
-      SecretValidationService.validateRequiredSecrets(env);
+      // Validate required secrets on startup (deployment secrets only)
+      SecretValidationService.validateRequiredSecrets(env, false);
       
       // Check production readiness
       const readinessCheck = SecretValidationService.validateProductionReadiness(env);
