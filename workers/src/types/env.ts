@@ -11,7 +11,7 @@ export interface Env {
   WOOOD_DUTCHNED_TOKEN: string;
 
   // Shopify OAuth App configuration
-  WOOOD_OAUTH_CLIENT_ID: string;
+  SHOPIFY_APP_CLIENT_ID: string;
   WOOOD_OAUTH_CLIENT_SECRET: string;
   SHOPIFY_APP_CLIENT_SECRET: string; // Production secret (replaces WOOOD_OAUTH_CLIENT_SECRET)
   SHOPIFY_APP_URL: string;
@@ -149,7 +149,7 @@ export function parseEnvironment(env: Env): WorkerConfig {
       maxRetries: parseInt(env.MAX_RETRIES || '3', 10),
     },
     shopifyOAuth: {
-      clientId: env.WOOOD_OAUTH_CLIENT_ID || '',
+      clientId: env.SHOPIFY_APP_CLIENT_ID || '',
       clientSecret: env.WOOOD_OAUTH_CLIENT_SECRET || '',
       appUrl: env.SHOPIFY_APP_URL || 'https://woood-production.leander-4e0.workers.dev',
       apiVersion: env.SHOPIFY_API_VERSION || '2025-04',
