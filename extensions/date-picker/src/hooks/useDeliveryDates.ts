@@ -44,12 +44,20 @@ async function fetchDeliveryDates(apiBaseUrl: string): Promise<{
   }, 15000); // 15 second timeout
 
   try {
+    // Get shop domain from checkout context
+    const shopDomain = window.location.hostname;
+    
     const response = await fetch(url, {
-      method: 'GET',
+      method: 'POST', // Changed to POST to send shop domain in body
       headers: {
         'Content-Type': 'application/json',
         'Accept': 'application/json',
       },
+      body: JSON.stringify({
+        shopDomain,
+        timestamp: new Date().toISOString(),
+        source: 'checkout_extension'
+      }),
       signal: controller.signal
     });
 

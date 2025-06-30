@@ -58,8 +58,8 @@ All API errors follow a consistent JSON structure:
 #### AUTH_REQUIRED
 - **HTTP Status**: 401 Unauthorized
 - **Description**: Authentication is required to access this resource
-- **Common Causes**: Missing or invalid session token
-- **Resolution**: Include valid session token in Authorization header
+- **Common Causes**: Missing shop parameter or access token
+- **Resolution**: Include shop parameter and ensure valid OAuth token
 
 ```json
 {
@@ -68,45 +68,44 @@ All API errors follow a consistent JSON structure:
     "message": "Authentication is required to access this resource",
     "details": {
       "endpoint": "/api/delivery-dates/available",
-      "auth_type": "session"
+      "auth_type": "token"
     }
   }
 }
 ```
 
-#### AUTH_INVALID_SESSION
+#### AUTH_NO_TOKEN
 - **HTTP Status**: 401 Unauthorized
-- **Description**: The provided session token is invalid or expired
-- **Common Causes**: Expired session, corrupted token, invalid format
+- **Description**: No access token found for the specified shop
+- **Common Causes**: App not installed, token expired, shop not authenticated
 - **Resolution**: Re-authenticate through OAuth flow
 
 ```json
 {
   "error": {
-    "code": "AUTH_INVALID_SESSION",
-    "message": "The provided session token is invalid or expired",
+    "code": "AUTH_NO_TOKEN",
+    "message": "No access token found for shop",
     "details": {
-      "session_id": "sess_***masked***",
-      "expiry": "2024-03-14T10:30:00Z"
+      "shop": "demo-shop.myshopify.com",
+      "authUrl": "/auth/start?shop=demo-shop.myshopify.com"
     }
   }
 }
 ```
 
-#### AUTH_SHOP_MISMATCH
-- **HTTP Status**: 403 Forbidden
-- **Description**: Session shop domain doesn't match request shop domain
-- **Common Causes**: Using session token from different shop
-- **Resolution**: Use correct session token for the shop
+#### AUTH_MISSING_SHOP
+- **HTTP Status**: 400 Bad Request
+- **Description**: Missing shop parameter in request
+- **Common Causes**: No shop parameter in query or headers
+- **Resolution**: Include shop parameter in query or X-Shopify-Shop-Domain header
 
 ```json
 {
   "error": {
-    "code": "AUTH_SHOP_MISMATCH",
-    "message": "Session shop domain doesn't match request shop domain",
+    "code": "AUTH_MISSING_SHOP",
+    "message": "Missing shop parameter",
     "details": {
-      "session_shop": "shop1.myshopify.com",
-      "request_shop": "shop2.myshopify.com"
+      "required": "shop parameter or X-Shopify-Shop-Domain header"
     }
   }
 }
@@ -115,7 +114,7 @@ All API errors follow a consistent JSON structure:
 #### AUTH_ADMIN_REQUIRED
 - **HTTP Status**: 403 Forbidden
 - **Description**: Admin access is required for this endpoint
-- **Common Causes**: Regular session used for admin endpoint
+- **Common Causes**: Regular token used for admin endpoint
 - **Resolution**: Authenticate as shop admin
 
 ```json

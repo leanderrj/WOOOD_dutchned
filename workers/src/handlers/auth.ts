@@ -1,12 +1,12 @@
 /**
  * Modern Shopify OAuth handlers for Cloudflare Workers
- * Implements proper OAuth flow with session management and security
+ * Implements proper OAuth flow with simple token storage
  */
 
 import { Env, WorkerConfig } from '../types/env';
 import { WorkersLogger } from '../utils/logger';
-import { createOAuthService, OAuthUtils } from '../services/shopifyOAuthService';
-import { Session } from '../types/session';
+import { OAuthUtils } from '../services/shopifyOAuthService';
+import { SimpleTokenService } from '../services/simpleTokenService';
 
 /**
  * Handle OAuth installation initiation
@@ -22,22 +22,20 @@ export async function handleOAuthStart(
   try {
     const url = new URL(request.url);
     const shop = url.searchParams.get('shop');
-    const isOnline = url.searchParams.get('online') === 'true';
 
     logger.info('OAuth installation request', {
       requestId,
       shop: shop ?? undefined,
-      isOnline,
       userAgent: request.headers.get('User-Agent') ?? undefined
     });
 
     if (!shop) {
       return new Response(
-        JSON.stringify({ 
+        JSON.stringify({
           error: 'Missing shop parameter',
           message: 'Shop domain is required to start OAuth flow'
         }),
-        { 
+        {
           status: 400,
           headers: { 'Content-Type': 'application/json' }
         }
@@ -48,29 +46,34 @@ export async function handleOAuthStart(
     const validatedShop = OAuthUtils.extractShopDomain(shop || '');
     if (!validatedShop) {
       return new Response(
-        JSON.stringify({ 
+        JSON.stringify({
           error: 'Invalid shop domain',
           message: 'Shop domain must be a valid Shopify domain'
         }),
-        { 
+        {
           status: 400,
           headers: { 'Content-Type': 'application/json' }
         }
       );
     }
 
-    // Create OAuth service and begin flow
-    const oauthService = createOAuthService(env, config);
-    const authUrl = await oauthService.beginOAuth(validatedShop, isOnline);
+    // Generate OAuth URL directly (no legacy session system)
+    const state = generateRandomState();
+    const scopes = config.shopifyOAuth.scopes.join(',');
+    const oauthUrl = new URL(`https://${validatedShop}/admin/oauth/authorize`);
+    oauthUrl.searchParams.set('client_id', config.shopifyOAuth.clientId);
+    oauthUrl.searchParams.set('scope', scopes);
+    oauthUrl.searchParams.set('redirect_uri', `${config.shopifyOAuth.appUrl}/auth/callback`);
+    oauthUrl.searchParams.set('state', state);
 
     logger.info('OAuth URL generated', {
       requestId,
       shop: validatedShop,
-      authUrl: authUrl.substring(0, 100) + '...' // Log partial URL for security
+      authUrl: oauthUrl.toString().substring(0, 100) + '...'
     });
 
     // Redirect to Shopify OAuth
-    return Response.redirect(authUrl, 302);
+    return Response.redirect(oauthUrl.toString(), 302);
 
   } catch (error) {
     logger.error('OAuth initiation failed', {
@@ -80,11 +83,11 @@ export async function handleOAuthStart(
     });
 
     return new Response(
-      JSON.stringify({ 
+      JSON.stringify({
         error: 'OAuth initiation failed',
         message: 'Unable to start OAuth flow. Please try again.'
       }),
-      { 
+      {
         status: 500,
         headers: { 'Content-Type': 'application/json' }
       }
@@ -94,7 +97,7 @@ export async function handleOAuthStart(
 
 /**
  * Handle OAuth callback and complete installation
- * Task 10.5: OAuth Callback Handler
+ * Task 10.5: OAuth Callback Handler - SIMPLIFIED
  */
 export async function handleOAuthCallback(
   request: Request,
@@ -157,7 +160,7 @@ export async function handleOAuthCallback(
         hasCode: !!code,
         hasState: !!state
       });
-      
+
       return createOAuthErrorResponse(
         'Invalid OAuth Callback',
         'Missing required parameters. Please try installing the app again.',
@@ -165,25 +168,36 @@ export async function handleOAuthCallback(
       );
     }
 
-    // Complete OAuth flow
-    const oauthService = createOAuthService(env, config);
-    const callbackResult = await oauthService.completeOAuth(request);
+    logger.info('[OAuthCallback] Shop domain received:', { shop });
+
+    // Exchange code for access token
+    const accessToken = await exchangeCodeForToken(shop, code, config);
+
+    // Check if new installation BEFORE storing token
+    const tokenService = new SimpleTokenService(env);
+    const isNewInstallation = !(await tokenService.hasToken(shop));
+
+    logger.info('[OAuthCallback] Checking isNewInstallation for shop:', { shop });
+
+    // Store token simply using SimpleTokenService
+    await tokenService.storeToken(shop, accessToken);
+
+    logger.info('[OAuthCallback] isNewInstallation result:', { shop, isNewInstallation });
 
     logger.info('OAuth completed successfully', {
       requestId,
-      shop: callbackResult.session.shop,
-      sessionId: callbackResult.session.id,
-      isNewInstallation: callbackResult.isNewInstallation,
-      hasAccessToken: !!callbackResult.session.accessToken
+      shop,
+      isNewInstallation,
+      hasAccessToken: !!accessToken
     });
 
-    // Register mandatory webhooks for new installations
-    if (callbackResult.isNewInstallation) {
-      await registerMandatoryWebhooks(callbackResult.session, config, logger, requestId);
+    // Register webhooks for new installations
+    if (isNewInstallation) {
+      await registerMandatoryWebhooks(shop, accessToken, config, env, logger, requestId);
     }
 
     // Create success response
-    return createOAuthSuccessResponse(callbackResult.session, callbackResult.isNewInstallation, env);
+    return createOAuthSuccessResponse(shop, isNewInstallation, env);
 
   } catch (error) {
     logger.error('OAuth callback failed', {
@@ -198,6 +212,28 @@ export async function handleOAuthCallback(
       new URL(request.url).searchParams.get('shop')
     );
   }
+}
+
+/**
+ * Exchange OAuth code for access token
+ */
+async function exchangeCodeForToken(shop: string, code: string, config: WorkerConfig): Promise<string> {
+  const response = await fetch(`https://${shop}/admin/oauth/access_token`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      client_id: config.shopifyOAuth.clientId,
+      client_secret: config.shopifyOAuth.clientSecret,
+      code
+    })
+  });
+
+  if (!response.ok) {
+    throw new Error(`Token exchange failed: ${response.status}`);
+  }
+
+  const data = await response.json() as { access_token: string };
+  return data.access_token;
 }
 
 /**
@@ -217,7 +253,7 @@ export async function handleAppInstallation(
   const host = url.searchParams.get('host');
   const hmac = url.searchParams.get('hmac');
   const timestamp = url.searchParams.get('timestamp');
-  
+
   // Enhanced debugging for embedded app loading
   const allParams: Record<string, string> = {};
   url.searchParams.forEach((value, key) => {
@@ -282,9 +318,11 @@ export async function handleAppInstallation(
 /**
  * Register mandatory webhooks after successful installation
  */
-async function registerMandatoryWebhooks(
-  session: Session,
+export async function registerMandatoryWebhooks(
+  shop: string,
+  accessToken: string,
   config: WorkerConfig,
+  env: Env,
   logger: WorkersLogger,
   requestId: string
 ): Promise<void> {
@@ -304,81 +342,90 @@ async function registerMandatoryWebhooks(
 
     logger.info('Registering mandatory webhooks', {
       requestId,
-      shop: session.shop,
-      webhookCount: webhooks.length
+      shop,
+      webhookCount: webhooks.length,
+      appUrl: config.shopifyOAuth.appUrl
     });
 
     for (const webhook of webhooks) {
       try {
-        // Create GraphQL mutation for webhook registration
-        const mutation = `
-          mutation webhookSubscriptionCreate($topic: WebhookSubscriptionTopic!, $webhookSubscription: WebhookSubscriptionInput!) {
-            webhookSubscriptionCreate(topic: $topic, webhookSubscription: $webhookSubscription) {
-              webhookSubscription {
-                id
-                callbackUrl
-              }
-              userErrors {
-                field
-                message
-              }
-            }
+        // Use REST API for webhook registration (more reliable than GraphQL)
+        const webhookData = {
+          webhook: {
+            topic: webhook.topic,
+            address: webhook.address,
+            format: webhook.format
           }
-        `;
-
-        const variables = {
-          topic: webhook.topic.toUpperCase().replace('/', '_'),
-          webhookSubscription: {
-            callbackUrl: webhook.address,
-            format: webhook.format.toUpperCase(),
-          },
         };
 
-        // Make authenticated GraphQL request
-        const response = await fetch(`https://${session.shop}/admin/api/${config.shopifyOAuth.apiVersion}/graphql.json`, {
+        logger.info('Registering webhook via REST API', {
+          requestId,
+          shop,
+          topic: webhook.topic,
+          address: webhook.address,
+        });
+
+        const response = await fetch(`https://${shop}/admin/api/${config.shopifyOAuth.apiVersion}/webhooks.json`, {
           method: 'POST',
           headers: {
-            'X-Shopify-Access-Token': session.accessToken || '',
+            'X-Shopify-Access-Token': accessToken,
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({
-            query: mutation,
-            variables,
-          }),
+          body: JSON.stringify(webhookData),
         });
 
         if (response.ok) {
           const data = await response.json() as any;
-          if (data.data?.webhookSubscriptionCreate?.webhookSubscription) {
+          if (data.webhook && data.webhook.id) {
             logger.info('Webhook registered successfully', {
               requestId,
-              shop: session.shop,
+              shop,
               topic: webhook.topic,
-              webhookId: data.data.webhookSubscriptionCreate.webhookSubscription.id
+              webhookId: data.webhook.id,
+              address: data.webhook.address
             });
-          } else {
-            logger.warn('Webhook registration failed', {
-              requestId,
-              shop: session.shop,
+
+            // Store webhook configuration in KV for tracking
+            const webhookConfig = {
+              shop,
+              webhookId: data.webhook.id,
               topic: webhook.topic,
-              errors: data.data?.webhookSubscriptionCreate?.userErrors
+              address: webhook.address,
+              registeredAt: new Date().toISOString(),
+              status: 'active'
+            };
+
+            await env.DELIVERY_CACHE.put(
+              `webhook:${shop}:${webhook.topic}`,
+              JSON.stringify(webhookConfig),
+              { expirationTtl: 365 * 24 * 60 * 60 } // 1 year
+            );
+          } else {
+            logger.warn('Webhook registration response missing webhook data', {
+              requestId,
+              shop,
+              topic: webhook.topic,
+              responseData: data
             });
           }
         } else {
+          const errorData = await response.text();
           logger.error('Webhook registration request failed', {
             requestId,
-            shop: session.shop,
+            shop,
             topic: webhook.topic,
             status: response.status,
-            statusText: response.statusText
+            statusText: response.statusText,
+            errorData
           });
         }
       } catch (webhookError) {
         logger.error('Individual webhook registration failed', {
           requestId,
-          shop: session.shop,
+          shop,
           topic: webhook.topic,
-          error: webhookError instanceof Error ? webhookError.message : 'Unknown error'
+          error: webhookError instanceof Error ? webhookError.message : 'Unknown error',
+          stack: webhookError instanceof Error ? webhookError.stack : undefined
         });
       }
     }
@@ -386,8 +433,9 @@ async function registerMandatoryWebhooks(
   } catch (error) {
     logger.error('Webhook registration failed', {
       requestId,
-      shop: session.shop,
-      error: error instanceof Error ? error.message : 'Unknown error'
+      shop,
+      error: error instanceof Error ? error.message : 'Unknown error',
+      stack: error instanceof Error ? error.stack : undefined
     });
   }
 }
@@ -395,7 +443,7 @@ async function registerMandatoryWebhooks(
 /**
  * Create OAuth success response with proper App Bridge integration
  */
-function createOAuthSuccessResponse(session: Session, isNewInstallation: boolean, env: Env): Response {
+function createOAuthSuccessResponse(shop: string, isNewInstallation: boolean, env: Env): Response {
   const successHtml = `
 <!DOCTYPE html>
 <html lang="en">
@@ -455,7 +503,7 @@ function createOAuthSuccessResponse(session: Session, isNewInstallation: boolean
     <div class="success">
       <h2>✅ Installation ${isNewInstallation ? 'Complete' : 'Updated'}</h2>
       <div class="installation-badge">${isNewInstallation ? 'NEW INSTALLATION' : 'UPDATE COMPLETE'}</div>
-      <p>WOOOD Delivery Date Picker has been successfully ${isNewInstallation ? 'installed' : 'updated'} for ${session.shop}.</p>
+      <p>WOOOD Delivery Date Picker has been successfully ${isNewInstallation ? 'installed' : 'updated'} for ${shop}.</p>
       <div class="redirect-info">
         <p><strong>Redirecting to app dashboard...</strong></p>
         <p>You can access the app anytime from your Shopify Admin → Apps section.</p>
@@ -466,7 +514,7 @@ function createOAuthSuccessResponse(session: Session, isNewInstallation: boolean
     // Initialize App Bridge and redirect to main app
     const urlParams = new URLSearchParams(window.location.search);
     const host = urlParams.get('host');
-    const shop = '${session.shop}';
+    const shop = '${shop}';
 
     console.log('🔍 OAuth Success Page Debug:', {
       currentUrl: window.location.href,
@@ -482,7 +530,7 @@ function createOAuthSuccessResponse(session: Session, isNewInstallation: boolean
     function performRedirect() {
       const baseUrl = window.location.origin;
       const hostParam = host ? '&host=' + encodeURIComponent(host) : '';
-      
+
              console.log('🔄 Preparing redirect...', {
          baseUrl,
          shop,
@@ -490,14 +538,14 @@ function createOAuthSuccessResponse(session: Session, isNewInstallation: boolean
          hostParam,
          isEmbedded: window.parent !== window
        });
-       
+
        // Test the redirect URL before using it
-       const testUrl = window.parent !== window 
+       const testUrl = window.parent !== window
          ? baseUrl + '/?embedded=1&shop=' + encodeURIComponent(shop) + '&session=authenticated' + hostParam
          : baseUrl + '/?shop=' + encodeURIComponent(shop) + '&session=authenticated' + hostParam;
-         
+
        console.log('🧪 Testing redirect URL:', testUrl);
-       
+
        // Test if the URL is accessible
        fetch(testUrl, { method: 'HEAD' })
          .then(response => {
@@ -511,12 +559,12 @@ function createOAuthSuccessResponse(session: Session, isNewInstallation: boolean
          .catch(error => {
            console.error('❌ Redirect URL test failed:', error);
          });
-      
+
       if (window.parent !== window) {
         // We're in an iframe (embedded context)
         const redirectUrl = baseUrl + '/?embedded=1&shop=' + encodeURIComponent(shop) + '&session=authenticated' + hostParam;
         console.log('🔄 Redirecting parent window to:', redirectUrl);
-        
+
         try {
           window.parent.location.href = redirectUrl;
         } catch (redirectError) {
@@ -540,9 +588,9 @@ function createOAuthSuccessResponse(session: Session, isNewInstallation: boolean
           host: host,
           forceRedirect: true
         });
-        
+
         console.log('✅ OAuth Success: App Bridge initialized');
-        
+
         // Redirect to main app interface after 5 seconds (increased delay for session save)
         setTimeout(performRedirect, 5000);
               } catch (appBridgeError) {
@@ -647,13 +695,13 @@ function createOAuthErrorResponse(title: string, message: string, shop?: string 
         <h1>${title}</h1>
         <p>${message}</p>
         ${shop ? `<p><strong>Shop:</strong> ${shop}</p>` : ''}
-        
+
         ${shop ? `
         <a href="/auth/start?shop=${encodeURIComponent(shop)}" class="retry-btn">
             🔄 Try Again
         </a>
         ` : ''}
-        
+
         <button class="close-btn" onclick="window.close()">
             Close Window
         </button>
@@ -668,7 +716,7 @@ function createOAuthErrorResponse(title: string, message: string, shop?: string 
       'Cache-Control': 'no-cache, no-store, must-revalidate'
     }
   });
-} 
+}
 
 /**
  * Create embedded app response that serves the frontend React app
@@ -734,7 +782,7 @@ function createEmbeddedAppResponse(shop: string, env: Env): Response {
     const urlParams = new URLSearchParams(window.location.search);
     const shop = '${shop}';
     const host = urlParams.get('host');
-    
+
          // Debug information with modern App Bridge detection
      console.log('🔍 App Bridge Debug Info:', {
        currentUrl: window.location.href,
@@ -753,11 +801,11 @@ function createEmbeddedAppResponse(shop: string, env: Env): Response {
          // Wait for App Bridge to load if not immediately available
      function initializeAppBridge() {
        // Check for modern App Bridge (multiple possible locations)
-       const AppBridge = window.shopify?.AppBridge || 
-                        window.shopify?.appBridge || 
+       const AppBridge = window.shopify?.AppBridge ||
+                        window.shopify?.appBridge ||
                         window.ShopifyAppBridge ||
                         window.AppBridge;
-                        
+
        console.log('🔍 App Bridge detection:', {
          'window.shopify': !!window.shopify,
          'window.shopify.AppBridge': !!(window.shopify?.AppBridge),
@@ -770,12 +818,12 @@ function createEmbeddedAppResponse(shop: string, env: Env): Response {
        if (AppBridge && typeof AppBridge.createApp === 'function') {
          try {
            console.log('✅ App Bridge found, initializing...');
-           
+
            const appConfig = {
              apiKey: '${env.SHOPIFY_APP_CLIENT_ID}',
              forceRedirect: true
            };
-           
+
            // Only add host if it exists
            if (host) {
              appConfig.host = host;
@@ -783,7 +831,7 @@ function createEmbeddedAppResponse(shop: string, env: Env): Response {
            } else {
              console.warn('⚠️ No host parameter found - this may affect embedded functionality');
            }
-           
+
            const app = AppBridge.createApp(appConfig);
            console.log('✅ App Bridge initialized successfully for shop:', shop);
 
@@ -811,7 +859,7 @@ function createEmbeddedAppResponse(shop: string, env: Env): Response {
               </div>
             \`;
           }, 1000);
-          
+
         } catch (appBridgeError) {
           console.error('❌ App Bridge initialization failed:', appBridgeError);
           document.querySelector('.loading').innerHTML = \`
@@ -827,14 +875,14 @@ function createEmbeddedAppResponse(shop: string, env: Env): Response {
          // Shopify object exists but no App Bridge - might be new embedded app context
          console.warn('⚠️ Shopify object found but no App Bridge - using embedded context');
          console.log('Available Shopify properties:', Object.keys(window.shopify));
-         
+
          document.querySelector('.loading').innerHTML = \`
            <div style="color: #0070f3;">
              <h2>🔷 Modern Shopify Context Detected</h2>
              <p><strong>Shop:</strong> \${shop}</p>
              <p><strong>Host:</strong> \${host || 'Missing'}</p>
              <p><strong>Status:</strong> Running in Shopify Admin (New Context)</p>
-             
+
              <div style="margin-top: 20px; padding: 16px; background: #f0f8ff; border-radius: 6px; border-left: 4px solid #0070f3;">
                <h3>🎯 App Status:</h3>
                <ul style="margin: 8px 0; padding-left: 20px;">
@@ -844,20 +892,20 @@ function createEmbeddedAppResponse(shop: string, env: Env): Response {
                  <li>✅ API: Ready</li>
                </ul>
              </div>
-             
+
              <div style="margin-top: 16px; padding: 12px; background: #f0f9f0; border-radius: 6px;">
                <p><strong>🚀 Your WOOOD Delivery app is operational!</strong></p>
                <p>✅ Checkout extensions active</p>
                <p>✅ Webhook processing active</p>
                <p>✅ API endpoints accessible</p>
              </div>
-             
+
              <div style="margin-top: 16px; padding: 12px; background: #fff3cd; border-radius: 6px; font-size: 14px;">
                <p><strong>ℹ️ Note:</strong> This app is running in Shopify's modern embedded context. Classic App Bridge is not required for functionality.</p>
              </div>
            </div>
          \`;
-         
+
        } else {
          console.error('❌ No Shopify context found');
          console.log('Window shopify object:', window.shopify);
@@ -883,13 +931,13 @@ function createEmbeddedAppResponse(shop: string, env: Env): Response {
 
      // Try immediate initialization
      initializeAppBridge();
-     
+
      // Check for App Bridge availability using modern detection
-     const hasAnyAppBridge = !!(window.shopify?.AppBridge || 
-                               window.shopify?.appBridge || 
+     const hasAnyAppBridge = !!(window.shopify?.AppBridge ||
+                               window.shopify?.appBridge ||
                                window.ShopifyAppBridge ||
                                window.AppBridge);
-     
+
      // If App Bridge wasn't available immediately, wait for it to load
      if (!hasAnyAppBridge && (!window.shopify || Object.keys(window.shopify).length === 0)) {
        console.log('⏳ App Bridge/Shopify context not ready, waiting for script to load...');
@@ -998,4 +1046,11 @@ function createInstallationPage(): Response {
       'Cache-Control': 'no-cache, no-store, must-revalidate'
     }
   });
+}
+
+/**
+ * Generate random state for OAuth CSRF protection
+ */
+function generateRandomState(): string {
+  return Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
 }

@@ -3,6 +3,7 @@ import { WorkersLogger } from '../utils/logger';
 import { ShopifyOrder } from '../handlers/webhooks';
 import { AttributeTransformService } from './attributeTransformService';
 import { MetafieldService } from './metafieldService';
+import { SimpleTokenService } from './simpleTokenService';
 
 /**
  * Processing result interface
@@ -289,7 +290,7 @@ export class OrderProcessingPipeline {
 
     } catch (error: any) {
       const processingTime = Date.now() - startTime;
-      
+
       this.logger.error('Order processing failed', {
         orderId: orderData.id,
         shop,
@@ -420,7 +421,7 @@ export class OrderProcessingPipeline {
       });
 
       const results = await Promise.all(
-        keys.map(async (key) => {
+        keys.map(async (key: { name: string }) => {
           const data = await this.env.DELIVERY_CACHE.get(key.name);
           return data ? JSON.parse(data) : null;
         })
@@ -447,7 +448,7 @@ export class OrderProcessingPipeline {
       const successfulProcessed = validResults.filter(r => r.success).length;
       const failedProcessed = totalProcessed - successfulProcessed;
       const successRate = (successfulProcessed / totalProcessed) * 100;
-      
+
       const totalProcessingTime = validResults
         .filter(r => r.processingTime)
         .reduce((sum, r) => sum + r.processingTime, 0);
@@ -512,7 +513,7 @@ export class OrderProcessingPipeline {
     try {
       const statusKey = `order_processing_status:${shop}:${orderId}`;
       const existingStatus = await this.env.DELIVERY_CACHE.get(statusKey);
-      
+
       if (!existingStatus) return false;
 
       const status: ProcessingStatus = JSON.parse(existingStatus);
@@ -571,7 +572,7 @@ export class OrderProcessingPipeline {
   private async removeFromQueue(queueId: string): Promise<void> {
     try {
       await this.env.DELIVERY_CACHE.delete(`processing_queue:${queueId}`);
-      
+
       this.logger.debug('Removed order from processing queue', { queueId });
     } catch (error: any) {
       this.logger.error('Error removing from queue', {
@@ -658,9 +659,9 @@ export class OrderProcessingPipeline {
     try {
       const key = `order_processing_status:${shop}:${orderId}`;
       const existingData = await this.env.DELIVERY_CACHE.get(key);
-      
+
       let status: ProcessingStatus;
-      
+
       if (existingData) {
         status = { ...JSON.parse(existingData), ...updates };
       } else {
@@ -748,26 +749,40 @@ export class OrderProcessingPipeline {
   }
 
   /**
-   * Get shop configuration from webhooks
+   * Get shop configuration from webhooks or SimpleTokenService
    */
   private async getShopConfiguration(shop: string): Promise<{
     accessToken: string;
     webhookId: string;
   } | null> {
     try {
+      // First try to get from webhook configurations
       const topics = ['orders/create', 'orders/paid', 'orders/updated'];
-      
+
       for (const topic of topics) {
         const configData = await this.env.DELIVERY_CACHE.get(`webhook:${shop}:${topic}`);
         if (configData) {
           const config = JSON.parse(configData);
-          return {
-            accessToken: config.accessToken,
-            webhookId: config.webhookId
-          };
+          if (config.accessToken) {
+            return {
+              accessToken: config.accessToken,
+              webhookId: config.webhookId
+            };
+          }
         }
       }
-      
+
+      // Fallback to SimpleTokenService
+      const tokenService = new SimpleTokenService(this.env);
+      const accessToken = await tokenService.getToken(shop);
+
+      if (accessToken) {
+        return {
+          accessToken,
+          webhookId: 'token-based'
+        };
+      }
+
       return null;
     } catch (error) {
       return null;
@@ -858,7 +873,7 @@ export class OrderProcessingPipeline {
     if (!error) return false;
 
     const message = error.message?.toLowerCase() || '';
-    
+
     return (
       message.includes('network') ||
       message.includes('timeout') ||
@@ -869,4 +884,4 @@ export class OrderProcessingPipeline {
       message.includes('rate limit')
     );
   }
-} 
+}

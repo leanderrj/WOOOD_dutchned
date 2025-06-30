@@ -81,13 +81,21 @@ export async function fetchDeliveryDates(config: FetchConfig = DEFAULT_CONFIG): 
       // Get authentication headers for session-based authentication
       const authHeaders = getAuthenticationHeaders();
 
+      // Get shop domain from checkout context
+      const shopDomain = window.location.hostname;
+
       const response = await fetch(url, {
-        method: 'GET',
+        method: 'POST', // Changed to POST to send shop domain in body
         headers: {
           'Content-Type': 'application/json',
           'Accept': 'application/json',
           ...authHeaders,
         },
+        body: JSON.stringify({
+          shopDomain,
+          timestamp: new Date().toISOString(),
+          source: 'checkout_extension'
+        }),
         signal: controller.signal
       });
 

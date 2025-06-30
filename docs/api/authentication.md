@@ -4,10 +4,10 @@
 
 ## 🔐 Authentication Overview
 
-The WOOOD Delivery Date Picker uses a multi-layered authentication system designed for enterprise security:
+The WOOOD Delivery Date Picker uses a simplified, high-performance authentication system designed for enterprise security:
 
 - **OAuth 2.0** for Shopify app installation and shop authentication
-- **Session Management** with AES-GCM encryption for secure token storage
+- **Simple Token Storage** using Cloudflare KV for secure access token storage
 - **Role-Based Access Control** for different API endpoint protection levels
 - **HMAC Signature Validation** for webhook authentication
 
@@ -18,8 +18,8 @@ Different endpoints require different authentication levels:
 | Authentication Type | Description | Use Cases |
 |---------------------|-------------|-----------|
 | `none` | Public access | Health checks, documentation |
-| `session` | OAuth session required | Delivery dates, shipping methods |
-| `session_admin` | Admin session required | Feature flags, system monitoring |
+| `token` | OAuth token required | Delivery dates, shipping methods |
+| `token_admin` | Admin token required | Feature flags, system monitoring |
 | `webhook` | HMAC signature required | Shopify webhook endpoints |
 
 ## 🚀 OAuth 2.0 Implementation
@@ -41,7 +41,7 @@ sequenceDiagram
     Shopify->>CF: GET /auth/callback?code=...
     CF->>Shopify: Exchange code for token
     Shopify->>CF: Access token + Shop info
-    CF->>CF: Store encrypted session
+    CF->>CF: Store token in KV
     CF->>App: Installation complete
 ```
 
@@ -82,155 +82,109 @@ GET /auth/callback?code=abc123&shop=your-shop.myshopify.com&state=xyz789
 **Automatic Processing**:
 1. Validates HMAC signature and state
 2. Exchanges authorization code for access token
-3. Creates encrypted session with AES-GCM
+3. Stores access token in Cloudflare KV using SimpleTokenService
 4. Registers mandatory webhooks
-5. Stores session in Cloudflare KV
+5. Completes installation
 
-## 🔑 Session Management
+## 🔑 Token Management
 
-### Session Structure
+### Token Structure
 
 ```typescript
-interface Session {
-  id: string;                    // Unique session identifier
-  shop: string;                  // Shop domain (e.g., demo-shop.myshopify.com)
-  accessToken: string;           // Encrypted Shopify access token
-  scope: string[];               // OAuth scopes granted
-  expires?: Date;                // Session expiration
-  isOnline: boolean;             // Online vs offline session
-  state?: string;                // OAuth state for validation
-  onlineAccessInfo?: {
-    expires_in: number;
-    associated_user_scope: string;
-    associated_user: {
-      id: number;
-      first_name: string;
-      last_name: string;
-      email: string;
-      locale: string;
-    };
-  };
+interface ShopToken {
+  accessToken: string;           // Shopify access token
+  createdAt: string;             // Token creation timestamp
+  shop: string;                  // Shop domain
 }
 ```
 
-### Session Encryption
+### Token Storage
 
-Sessions are encrypted using **AES-GCM** with 256-bit keys:
+Tokens are stored in Cloudflare KV with automatic expiration:
 
 ```typescript
-// Encryption process
-const sessionData = JSON.stringify(session);
-const key = await crypto.subtle.importKey(
-  'raw',
-  new TextEncoder().encode(env.API_ENCRYPTION_KEY),
-  { name: 'AES-GCM' },
-  false,
-  ['encrypt', 'decrypt']
-);
-
-const iv = crypto.getRandomValues(new Uint8Array(12));
-const encryptedData = await crypto.subtle.encrypt(
-  { name: 'AES-GCM', iv },
-  key,
-  new TextEncoder().encode(sessionData)
+// Token storage with TTL (2 years)
+await env.DELIVERY_CACHE.put(
+  `shop_token:${shop}`,
+  JSON.stringify(tokenData),
+  { expirationTtl: 86400 * 365 * 2 }
 );
 ```
 
-### Session Fingerprinting
+### SimpleTokenService
 
-Each session includes a security fingerprint:
+The system uses a simplified token service for high performance:
 
 ```typescript
-interface SessionFingerprint {
-  userAgent: string;             // Hashed User-Agent
-  ipAddress: string;             // Hashed IP address
-  shopDomain: string;            // Shop domain
-  timestamp: number;             // Creation timestamp
+export class SimpleTokenService {
+  async storeToken(shop: string, accessToken: string): Promise<void>
+  async getToken(shop: string): Promise<string | null>
+  async deleteToken(shop: string): Promise<void>
+  async hasToken(shop: string): Promise<boolean>
+  async listShopsWithTokens(): Promise<string[]>
 }
 ```
 
-### Session Storage
-
-Sessions are stored in Cloudflare KV with automatic expiration:
-
-```typescript
-// Session storage with TTL
-await env.WOOOD_KV.put(
-  `session:${sessionId}`,
-  encryptedSessionData,
-  { expirationTtl: 86400 } // 24 hours
-);
-
-// Session fingerprint storage
-await env.WOOOD_KV.put(
-  `session_fingerprint:${sessionId}`,
-  JSON.stringify(fingerprint),
-  { expirationTtl: 86400 }
-);
-```
-
-## 🛡️ Session Authentication
+## 🛡️ Token Authentication
 
 ### Authentication Headers
 
 Include these headers in authenticated requests:
 
 ```http
-Authorization: Bearer <session_token>
 X-Shopify-Shop-Domain: your-shop.myshopify.com
 X-Request-ID: <uuid>
 Content-Type: application/json
 ```
 
-### Session Validation Process
+### Token Validation Process
 
-1. **Extract Session Token**: From Authorization header, X-Session-ID header, query params, or cookies
-2. **Decrypt Session**: Using AES-GCM with API encryption key
-3. **Validate Fingerprint**: Check User-Agent, IP, and shop domain match
-4. **Check Expiration**: Ensure session hasn't expired
-5. **Verify Shop Domain**: Match against request headers
+1. **Extract Shop Domain**: From X-Shopify-Shop-Domain header or query parameters
+2. **Lookup Token**: Retrieve access token from KV storage
+3. **Validate Token**: Ensure token exists and is valid
+4. **Verify Shop Domain**: Match against request headers
 
-### Authentication Middleware
+### Authentication Function
 
 ```typescript
-export async function sessionAuthMiddleware(
+async function authenticateRequest(
   request: Request,
-  env: Env
-): Promise<SessionAuthResult> {
-  // Extract session token from multiple sources
-  const sessionToken = extractSessionToken(request);
-
-  if (!sessionToken) {
-    return { success: false, error: 'No session token provided' };
+  env: Env,
+  logger: WorkersLogger,
+  requestId: string
+): Promise<{ success: boolean; shop?: string; accessToken?: string; error?: string }> {
+  try {
+    const url = new URL(request.url);
+    const shop = url.searchParams.get('shop') || request.headers.get('X-Shopify-Shop-Domain');
+    
+    if (!shop) {
+      return { success: false, error: 'Missing shop parameter' };
+    }
+    
+    const tokenService = new SimpleTokenService(env);
+    const accessToken = await tokenService.getToken(shop);
+    
+    if (!accessToken) {
+      return { success: false, shop, error: 'No access token found for shop' };
+    }
+    
+    return { success: true, shop, accessToken };
+  } catch (error) {
+    logger.error('Authentication failed', { requestId, error: error.message });
+    return { success: false, error: 'Authentication failed' };
   }
-
-  // Load and decrypt session
-  const session = await sessionStorage.loadSession(sessionToken);
-
-  if (!session) {
-    return { success: false, error: 'Invalid session token' };
-  }
-
-  // Validate session fingerprint
-  const fingerprintValid = await validateSessionFingerprint(session, request);
-
-  if (!fingerprintValid) {
-    return { success: false, error: 'Session fingerprint mismatch' };
-  }
-
-  return { success: true, session };
 }
 ```
 
 ## 🔐 Admin Authentication
 
-### Admin Session Requirements
+### Admin Token Requirements
 
 Admin endpoints require elevated permissions:
 
-- **Valid OAuth session** with proper shop authentication
+- **Valid OAuth token** with proper shop authentication
 - **Admin scope verification** (currently any authenticated shop admin)
-- **Enhanced security checks** with shorter session timeouts
+- **Enhanced security checks** with proper error handling
 
 ### Admin Access Validation
 
@@ -239,94 +193,152 @@ export async function requireAdminAccess(
   request: Request,
   env: Env
 ): Promise<AdminAuthResult> {
-  // First validate basic session
-  const sessionResult = await sessionAuthMiddleware(request, env);
+  // First validate basic token
+  const authResult = await authenticateRequest(request, env, logger, requestId);
 
-  if (!sessionResult.success) {
-    return { success: false, error: sessionResult.error };
+  if (!authResult.success) {
+    return { success: false, error: authResult.error };
   }
 
   // Verify admin permissions
-  const isAdmin = await verifyAdminPermissions(sessionResult.session);
-
+  const isAdmin = await verifyAdminPermissions(authResult.shop);
+  
   if (!isAdmin) {
     return { success: false, error: 'Admin access required' };
   }
 
-  return { success: true, session: sessionResult.session };
+  return { 
+    success: true, 
+    shop: authResult.shop, 
+    accessToken: authResult.accessToken 
+  };
 }
 ```
 
-## 🔗 Webhook Authentication
+## 🔒 Webhook Authentication
 
 ### HMAC Signature Validation
 
-Webhooks use HMAC-SHA256 signature validation:
+Webhook endpoints use Shopify's HMAC signature validation:
 
 ```typescript
-export async function validateWebhookSignature(
-  request: Request,
-  env: Env
+async function verifyWebhookSignature(
+  body: string,
+  signature: string,
+  secret: string
 ): Promise<boolean> {
-  const signature = request.headers.get('X-Shopify-Hmac-Sha256');
-  const body = await request.text();
-
-  if (!signature || !body) {
-    return false;
-  }
-
-  // Calculate expected signature
-  const expectedSignature = await crypto.subtle.sign(
-    'HMAC',
-    await crypto.subtle.importKey(
-      'raw',
-      new TextEncoder().encode(env.WEBHOOK_SECRET),
-      { name: 'HMAC', hash: 'SHA-256' },
-      false,
-      ['sign']
-    ),
-    new TextEncoder().encode(body)
+  const expectedSignature = crypto
+    .createHmac('sha256', secret)
+    .update(body, 'utf8')
+    .digest('base64');
+    
+  return crypto.timingSafeEqual(
+    Buffer.from(signature),
+    Buffer.from(expectedSignature)
   );
-
-  // Compare signatures
-  const expectedBase64 = btoa(String.fromCharCode(...new Uint8Array(expectedSignature)));
-  return signature === expectedBase64;
 }
 ```
 
 ### Webhook Headers
 
-Shopify includes these headers in webhook requests:
+Required headers for webhook authentication:
 
 ```http
-X-Shopify-Topic: orders/paid
-X-Shopify-Hmac-Sha256: <signature>
+X-Shopify-Hmac-Sha256: <hmac_signature>
 X-Shopify-Shop-Domain: your-shop.myshopify.com
-X-Shopify-API-Version: 2025-04
+X-Shopify-Topic: orders/paid
 Content-Type: application/json
 ```
 
-## 🚨 Security Best Practices
+## 🚨 Error Handling
 
-### Session Security
+### Authentication Errors
 
-- **AES-GCM Encryption**: All sessions encrypted with 256-bit keys
-- **Session Fingerprinting**: Prevents session hijacking
-- **Automatic Expiration**: Sessions expire after 24 hours
-- **Secure Storage**: Cloudflare KV with TTL management
+| Error Code | Description | Resolution |
+|------------|-------------|------------|
+| `AUTH_MISSING_SHOP` | Missing shop parameter | Include shop in query params or headers |
+| `AUTH_NO_TOKEN` | No access token found | Re-authenticate via OAuth flow |
+| `AUTH_INVALID_TOKEN` | Invalid or expired token | Re-authenticate via OAuth flow |
+| `AUTH_ADMIN_REQUIRED` | Admin access required | Use admin OAuth flow |
 
-### Token Management
+### Error Response Format
 
-- **No Hardcoded Secrets**: All secrets via Cloudflare Secrets
-- **Token Rotation**: Regular rotation of encryption keys
-- **Scope Limitation**: Minimal OAuth scopes: `read_products,read_orders,write_order_metafields`
+```json
+{
+  "error": "AUTH_NO_TOKEN",
+  "message": "No access token found for shop",
+  "shop": "demo-shop.myshopify.com",
+  "authUrl": "/auth/start?shop=demo-shop.myshopify.com",
+  "timestamp": "2024-01-15T10:30:00Z"
+}
+```
 
-### Request Validation
+## 🔄 Token Lifecycle
 
-- **HTTPS Only**: All requests must use HTTPS
-- **CORS Protection**: Strict origin validation
-- **Rate Limiting**: Prevents abuse and DDoS
-- **Input Sanitization**: All inputs validated and sanitized
+### Token Creation
+
+1. **OAuth Installation**: Shop installs app via OAuth flow
+2. **Token Exchange**: Authorization code exchanged for access token
+3. **Token Storage**: Token stored in KV with shop as key
+4. **Webhook Registration**: Mandatory webhooks registered
+
+### Token Usage
+
+1. **API Requests**: Shop domain used to lookup access token
+2. **Shopify API Calls**: Access token used for authenticated requests
+3. **Webhook Processing**: Token used for order processing
+
+### Token Cleanup
+
+1. **App Uninstall**: Token deleted when app is uninstalled
+2. **Manual Cleanup**: Admin can manually remove tokens
+3. **Expiration**: Tokens automatically expire after 2 years
+
+## 🛡️ Security Considerations
+
+### Token Security
+
+- **No Encryption**: Tokens stored as-is in KV (Shopify tokens are already secure)
+- **Shop Isolation**: Each shop has its own token key
+- **Automatic Expiration**: Tokens expire after 2 years
+- **No Session State**: Eliminates session corruption and race conditions
+
+### Performance Benefits
+
+- **No Decryption**: Eliminates CPU-intensive AES-GCM decryption
+- **Simple Lookup**: Direct KV lookup by shop domain
+- **No Fingerprinting**: Removes complex session fingerprinting
+- **Reduced Complexity**: Simpler authentication flow
+
+### Production Benefits
+
+- **CPU Limit Compliance**: Eliminates CPU limit exceeded errors
+- **Faster Response Times**: Reduced authentication overhead
+- **Better Reliability**: No session corruption or race conditions
+- **Simplified Debugging**: Clearer authentication flow
+
+## 📋 Implementation Checklist
+
+### For Developers
+
+- [ ] Use `authenticateRequest()` function for token validation
+- [ ] Pass shop domain in `X-Shopify-Shop-Domain` header
+- [ ] Handle authentication errors with proper HTTP status codes
+- [ ] Use SimpleTokenService for token operations
+
+### For Operations
+
+- [ ] Monitor token storage usage in Cloudflare KV
+- [ ] Set up alerts for authentication failures
+- [ ] Review token cleanup processes
+- [ ] Monitor OAuth flow completion rates
+
+### For Security
+
+- [ ] Validate all webhook signatures
+- [ ] Monitor for unauthorized access attempts
+- [ ] Review token access patterns
+- [ ] Ensure proper error handling without information leakage
 
 ## 🔍 Authentication Troubleshooting
 

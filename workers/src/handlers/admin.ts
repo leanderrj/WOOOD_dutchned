@@ -1,6 +1,5 @@
 import { Env, WorkerConfig } from '../types/env';
 import { WorkersLogger } from '../utils/logger';
-import { sessionAuthMiddleware } from '../middleware/sessionAuth';
 
 /**
  * Handle admin interface requests with proper App Bridge integration
@@ -25,13 +24,13 @@ export async function handleAdminInterface(
     });
 
     // Validate session for authenticated admin access
-    const sessionResult = await sessionAuthMiddleware(request, env, config, logger, requestId);
+    const authResult = await authenticateRequest(request, env, logger, requestId);
     
-    if (!sessionResult.success || !sessionResult.session) {
+    if (!authResult.success || !authResult.shop) {
       logger.warn('Admin access denied - authentication required', {
         requestId,
         shop: shop ?? undefined,
-        error: sessionResult.error
+        error: authResult.error
       });
 
       // Redirect to OAuth for authentication
@@ -42,7 +41,7 @@ export async function handleAdminInterface(
       return Response.redirect(authUrl.toString(), 302);
     }
 
-    const session = sessionResult.session;
+    const simpleSession = { shop: authResult.shop, accessToken: authResult.accessToken };
 
     const html = `
 <!DOCTYPE html>
@@ -120,7 +119,7 @@ export async function handleAdminInterface(
   <div id="app-root" class="app-container">
     <div class="header">
       <h1>WOOOD Delivery Date Picker</h1>
-      <p>Managing delivery dates for <strong>${session.shop}</strong></p>
+      <p>Managing delivery dates for <strong>${simpleSession.shop}</strong></p>
     </div>
     
     <div class="loading">
@@ -133,14 +132,14 @@ export async function handleAdminInterface(
     // Initialize App Bridge
     const urlParams = new URLSearchParams(window.location.search);
     const host = urlParams.get('host');
-    const shop = '${session.shop}';
+    const shop = '${simpleSession.shop}';
     
     let app = null;
     
     try {
       if (window.shopify && window.shopify.AppBridge) {
         app = window.shopify.AppBridge.createApp({
-          apiKey: '${env.WOOOD_OAUTH_CLIENT_ID}',
+          apiKey: '${config.shopifyOAuth.clientId}',
           host: host,
           forceRedirect: true
         });
@@ -269,5 +268,29 @@ export async function handleAdminInterface(
         'Content-Security-Policy': "frame-ancestors 'self' https://*.myshopify.com https://admin.shopify.com"
       }
     });
+  }
+}
+
+async function authenticateRequest(
+  request: Request,
+  env: Env,
+  logger: WorkersLogger,
+  requestId: string
+): Promise<{ success: boolean; shop?: string; accessToken?: string; error?: string }> {
+  try {
+    const url = new URL(request.url);
+    const shop = url.searchParams.get('shop') || request.headers.get('X-Shopify-Shop-Domain');
+    if (!shop) {
+      return { success: false, error: 'Missing shop parameter' };
+    }
+    const tokenService = new (await import('../services/simpleTokenService')).SimpleTokenService(env);
+    const accessToken = await tokenService.getToken(shop);
+    if (!accessToken) {
+      return { success: false, shop, error: 'No access token found for shop' };
+    }
+    return { success: true, shop, accessToken };
+  } catch (error) {
+    logger.error('Authentication failed', { requestId, error: error instanceof Error ? error.message : 'Unknown error' });
+    return { success: false, error: 'Authentication failed' };
   }
 } 

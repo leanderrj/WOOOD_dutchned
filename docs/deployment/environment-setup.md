@@ -67,9 +67,7 @@ cat > workers/.dev.vars << EOF
 SHOPIFY_APP_CLIENT_ID=your_dev_client_id
 SHOPIFY_APP_CLIENT_SECRET=your_dev_client_secret
 DUTCHNED_API_CREDENTIALS=your_dev_credentials
-SESSION_SECRET=dev_session_secret_32_chars_min
 WEBHOOK_SECRET=dev_webhook_secret_64_chars_min
-API_ENCRYPTION_KEY=dev_encryption_key_32_chars_exact
 EOF
 ```
 
@@ -188,9 +186,7 @@ wrangler publish --env staging
 # Configure staging secrets
 wrangler secret put SHOPIFY_APP_CLIENT_SECRET --env staging
 wrangler secret put DUTCHNED_API_CREDENTIALS --env staging
-wrangler secret put SESSION_SECRET --env staging
 wrangler secret put WEBHOOK_SECRET --env staging
-wrangler secret put API_ENCRYPTION_KEY --env staging
 ```
 
 **2. Staging wrangler.toml**:

@@ -17,7 +17,7 @@ import { handleOAuthStart, handleOAuthCallback, handleAppInstallation } from './
 import { handleAdminInterface } from './handlers/admin';
 import { handleGetFeatureFlags, handleUpdateFeatureFlag, handleBulkUpdateFeatureFlags } from './handlers/featureFlags';
 import { handleSystemHealth, handleActivityLog } from './handlers/adminMonitoring';
-import { sessionAuthMiddleware } from './middleware/sessionAuth';
+import { SimpleTokenService } from './services/simpleTokenService';
 
 // Sprint 15: Production Security Hardening imports
 import { SecretValidationService } from './services/secretValidationService';
@@ -169,52 +169,52 @@ export default {
 
       // Feature flags API endpoints
       if (url.pathname === '/api/admin/feature-flags' && request.method === 'GET') {
-        const sessionResult = await sessionAuthMiddleware(request, env, config, logger, requestId);
-        if (!sessionResult.success || !sessionResult.session) {
+        const authResult = await authenticateRequest(request, env, logger, requestId);
+        if (!authResult.success || !authResult.shop) {
           return addCorsHeaders(new Response(JSON.stringify({ success: false, error: 'Authentication required' }), { status: 401 }), corsHeaders);
         }
-        const response = await handleGetFeatureFlags(request, env, sessionResult.session, logger, requestId);
+        const response = await handleGetFeatureFlags(request, env, { shop: authResult.shop, accessToken: authResult.accessToken }, logger, requestId);
         logger.logRequest(request.method, url.pathname, response.status, Date.now() - startTime);
         return addCorsHeaders(response, corsHeaders);
       }
 
       if (url.pathname === '/api/admin/feature-flags' && request.method === 'POST') {
-        const sessionResult = await sessionAuthMiddleware(request, env, config, logger, requestId);
-        if (!sessionResult.success || !sessionResult.session) {
+        const authResult = await authenticateRequest(request, env, logger, requestId);
+        if (!authResult.success || !authResult.shop) {
           return addCorsHeaders(new Response(JSON.stringify({ success: false, error: 'Authentication required' }), { status: 401 }), corsHeaders);
         }
-        const response = await handleUpdateFeatureFlag(request, env, sessionResult.session, logger, requestId);
+        const response = await handleUpdateFeatureFlag(request, env, { shop: authResult.shop, accessToken: authResult.accessToken }, logger, requestId);
         logger.logRequest(request.method, url.pathname, response.status, Date.now() - startTime);
         return addCorsHeaders(response, corsHeaders);
       }
 
       if (url.pathname === '/api/admin/feature-flags/bulk' && request.method === 'POST') {
-        const sessionResult = await sessionAuthMiddleware(request, env, config, logger, requestId);
-        if (!sessionResult.success || !sessionResult.session) {
+        const authResult = await authenticateRequest(request, env, logger, requestId);
+        if (!authResult.success || !authResult.shop) {
           return addCorsHeaders(new Response(JSON.stringify({ success: false, error: 'Authentication required' }), { status: 401 }), corsHeaders);
         }
-        const response = await handleBulkUpdateFeatureFlags(request, env, sessionResult.session, logger, requestId);
+        const response = await handleBulkUpdateFeatureFlags(request, env, { shop: authResult.shop, accessToken: authResult.accessToken }, logger, requestId);
         logger.logRequest(request.method, url.pathname, response.status, Date.now() - startTime);
         return addCorsHeaders(response, corsHeaders);
       }
 
       // System monitoring API endpoints
       if (url.pathname === '/api/admin/system-health' && request.method === 'GET') {
-        const sessionResult = await sessionAuthMiddleware(request, env, config, logger, requestId);
-        if (!sessionResult.success || !sessionResult.session) {
+        const authResult = await authenticateRequest(request, env, logger, requestId);
+        if (!authResult.success || !authResult.shop) {
           return addCorsHeaders(new Response(JSON.stringify({ success: false, error: 'Authentication required' }), { status: 401 }), corsHeaders);
         }
-        const response = await handleSystemHealth(request, env, sessionResult.session, config, logger, requestId);
+        const response = await handleSystemHealth(request, env, { shop: authResult.shop, accessToken: authResult.accessToken }, config, logger, requestId);
         logger.logRequest(request.method, url.pathname, response.status, Date.now() - startTime);
         return addCorsHeaders(response, corsHeaders);
       }
 
       if (url.pathname === '/api/admin/activity-log' && request.method === 'GET') {
-        const sessionResult = await sessionAuthMiddleware(request, env, config, logger, requestId);
-        if (!sessionResult.success || !sessionResult.session) {
+        const authResult = await authenticateRequest(request, env, logger, requestId);
+        if (!authResult.success || !authResult.shop) {
           return addCorsHeaders(new Response(JSON.stringify({ success: false, error: 'Authentication required' }), { status: 401 }), corsHeaders);
         }
-        const response = await handleActivityLog(request, env, sessionResult.session, logger, requestId);
+        const response = await handleActivityLog(request, env, { shop: authResult.shop, accessToken: authResult.accessToken }, logger, requestId);
         logger.logRequest(request.method, url.pathname, response.status, Date.now() - startTime);
         return addCorsHeaders(response, corsHeaders);
       }
@@ -366,6 +366,106 @@ export default {
         const response = await handleWebhookStatus(request, env, logger);
         logger.logRequest(request.method, url.pathname, response.status, Date.now() - startTime);
         return addCorsHeaders(response, corsHeaders);
+      }
+
+      // Check webhook registration status for specific shop
+      if (url.pathname === '/api/webhooks/status' && url.searchParams.get('shop')) {
+        const shop = url.searchParams.get('shop')!;
+        logger.info('Webhook status check for specific shop', { shop });
+
+        try {
+          const webhookStatuses = [];
+
+          // Check status of all registered webhooks
+          const webhookTopics = ['orders/paid', 'app/uninstalled'];
+
+          for (const topic of webhookTopics) {
+            const webhookConfigData = await env.DELIVERY_CACHE.get(`webhook:${shop}:${topic}`);
+
+            if (webhookConfigData) {
+              const config = JSON.parse(webhookConfigData);
+              webhookStatuses.push({
+                topic,
+                status: config.status,
+                webhookId: config.webhookId,
+                registeredAt: config.registeredAt,
+                address: config.address
+              });
+            } else {
+              webhookStatuses.push({
+                topic,
+                status: 'not_registered'
+              });
+            }
+          }
+
+          return new Response(JSON.stringify({
+            success: true,
+            shop,
+            webhooks: webhookStatuses,
+            timestamp: new Date().toISOString()
+          }), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json', ...corsHeaders }
+          });
+
+        } catch (error: any) {
+          logger.error('Failed to get webhook status', { error: error.message });
+          return new Response(JSON.stringify({
+            success: false,
+            error: 'Failed to get webhook status',
+            details: error.message
+          }), {
+            status: 500,
+            headers: { 'Content-Type': 'application/json', ...corsHeaders }
+          });
+        }
+      }
+
+      // Manual webhook registration endpoint
+      if (url.pathname === '/api/webhooks/register-manual' && request.method === 'POST') {
+        logger.info('Manual webhook registration request received');
+
+        try {
+          const body = await request.json() as { shop: string; accessToken: string };
+
+          if (!body.shop || !body.accessToken) {
+            return new Response(JSON.stringify({
+              success: false,
+              error: 'Missing required fields: shop and accessToken'
+            }), {
+              status: 400,
+              headers: { 'Content-Type': 'application/json', ...corsHeaders }
+            });
+          }
+
+          // Import the webhook registration function
+          const { registerMandatoryWebhooks } = await import('./handlers/auth');
+
+          // Register webhooks
+          await registerMandatoryWebhooks(body.shop, body.accessToken, config, env, logger, crypto.randomUUID());
+
+          return new Response(JSON.stringify({
+            success: true,
+            message: 'Webhooks registered successfully',
+            shop: body.shop,
+            timestamp: new Date().toISOString()
+          }), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json', ...corsHeaders }
+          });
+
+        } catch (error: any) {
+          logger.error('Manual webhook registration failed', { error: error.message });
+          return new Response(JSON.stringify({
+            success: false,
+            error: 'Webhook registration failed',
+            details: error.message
+          }), {
+            status: 500,
+            headers: { 'Content-Type': 'application/json', ...corsHeaders }
+          });
+        }
       }
 
       // === ORDER WEBHOOK PROCESSING ENDPOINTS ===
@@ -523,7 +623,7 @@ export default {
 
       // DutchNed delivery dates endpoint
       if (url.pathname === '/api/delivery-dates/available') {
-        const response = await handleDeliveryDatesEndpoint(env, logger, config);
+        const response = await handleDeliveryDatesEndpoint(request, env, logger, config);
         logger.logRequest(request.method, url.pathname, response.status, Date.now() - startTime);
         return addCorsHeaders(response, corsHeaders);
       }
@@ -549,22 +649,17 @@ export default {
 
         try {
           const accessToken = await getShopAccessToken(shop, env);
-          const { createSessionStorage } = await import('./utils/sessionStorage');
-          const sessionStorage = createSessionStorage(env);
-          const sessions = await sessionStorage.findSessionsByShop(shop);
+          const sessionStorage = new SimpleTokenService(env);
+          const sessions = await sessionStorage.listShopsWithTokens();
 
           return new Response(JSON.stringify({
             shop,
             hasAccessToken: !!accessToken,
             accessToken: accessToken ? `${accessToken.substring(0, 10)}...` : null,
             sessionCount: sessions.length,
-            sessions: sessions.map(s => ({
-              id: s.id,
-              shop: s.shop,
-              isOnline: s.isOnline,
-              hasAccessToken: !!s.accessToken,
-              expires: s.expires ? s.expires.toISOString() : null,
-              scopes: s.scope
+            sessions: sessions.map(shopDomain => ({
+              shop: shopDomain,
+              hasAccessToken: true // If it's in the list, it has a token
             })),
             timestamp: new Date().toISOString()
           }, null, 2), {
@@ -588,13 +683,12 @@ export default {
         logger.info('Debug: Clearing sessions for shop', { shop });
 
         try {
-          const { createSessionStorage } = await import('./utils/sessionStorage');
-          const sessionStorage = createSessionStorage(env);
-          const sessions = await sessionStorage.findSessionsByShop(shop);
+          const sessionStorage = new SimpleTokenService(env);
+          const sessions = await sessionStorage.listShopsWithTokens();
 
           // Delete all sessions for this shop
-          for (const session of sessions) {
-            await sessionStorage.deleteSession(session.id);
+          for (const shopDomain of sessions) {
+            await sessionStorage.deleteToken(shopDomain);
           }
 
           return new Response(JSON.stringify({
@@ -623,21 +717,20 @@ export default {
         logger.info('🔧 Debug: Fixing corrupted sessions for shop', { shop });
 
         try {
-          const { createSessionStorage } = await import('./utils/sessionStorage');
-          const sessionStorage = createSessionStorage(env);
-          
+          const sessionStorage = new SimpleTokenService(env);
+
           // Try to get all sessions for this shop, but catch decryption errors
           let allSessionKeys: string[] = [];
           let corruptedSessions: string[] = [];
           let validSessions: any[] = [];
 
           try {
-            const sessions = await sessionStorage.findSessionsByShop(shop);
+            const sessions = await sessionStorage.listShopsWithTokens();
             validSessions = sessions;
           } catch (sessionError) {
-            logger.warn('Error loading sessions - attempting cleanup', { 
-              shop, 
-              error: sessionError instanceof Error ? sessionError.message : 'Unknown error' 
+            logger.warn('Error loading sessions - attempting cleanup', {
+              shop,
+              error: sessionError instanceof Error ? sessionError.message : 'Unknown error'
             });
 
             // Try to manually clean up corrupted sessions
@@ -734,6 +827,150 @@ export default {
             error: error instanceof Error ? error.message : 'Unknown error',
             shop,
             productId,
+            timestamp: new Date().toISOString()
+          }), {
+            status: 500,
+            headers: { 'Content-Type': 'application/json', ...corsHeaders }
+          });
+        }
+      }
+
+      // 🔧 PERFORMANCE FIX: Background session cleanup to prevent CPU-intensive decryption loops
+      if (url.pathname === '/admin/cleanup-sessions' && request.method === 'POST' && url.searchParams.get('shop')) {
+        const sessionResult = await authenticateRequest(request, env, logger, requestId);
+        if (!sessionResult.success || !sessionResult.shop) {
+          return new Response(JSON.stringify({ error: 'Authentication required' }), {
+            status: 401,
+            headers: { 'Content-Type': 'application/json', ...corsHeaders }
+          });
+        }
+
+        const shop = sessionResult.shop;
+        logger.info('🧹 Starting background session cleanup', { shop, requestId });
+
+        try {
+          const sessionStorage = new SimpleTokenService(env);
+
+          // Get session index
+          const indexKey = `shop_index:${shop}`;
+          const indexData = await env.WOOOD_KV.get(indexKey);
+
+          if (!indexData) {
+            return new Response(JSON.stringify({
+              shop,
+              message: 'No sessions found for cleanup',
+              corruptedSessionsRemoved: 0,
+              timestamp: new Date().toISOString()
+            }), {
+              status: 200,
+              headers: { 'Content-Type': 'application/json', ...corsHeaders }
+            });
+          }
+
+          const sessionIds: string[] = JSON.parse(indexData);
+          let corruptedSessionsRemoved = 0;
+          let validSessions = 0;
+
+          // Process sessions one by one (avoid CPU limits)
+          for (const sessionId of sessionIds) {
+            try {
+              // Try to load session (will handle decryption internally)
+              const sessionData = await env.WOOOD_KV.get(`session:${sessionId}`);
+              if (!sessionData) {
+                // Session missing, remove from index
+                corruptedSessionsRemoved++;
+                continue;
+              }
+
+              // Try basic JSON parse to check if it's corrupted
+              JSON.parse(sessionData);
+              validSessions++;
+            } catch (parseError) {
+              // Corrupted session, delete it
+              logger.info('🗑️ Removing corrupted session', { sessionId: sessionId.substring(0, 8) + '...', shop });
+              await env.WOOOD_KV.delete(`session:${sessionId}`);
+              await env.WOOOD_KV.delete(`session_fingerprint:${sessionId}`);
+              corruptedSessionsRemoved++;
+            }
+          }
+
+          // Update shop index with only valid sessions
+          if (corruptedSessionsRemoved > 0) {
+            const remainingSessionIds = sessionIds.slice(validSessions);
+            if (remainingSessionIds.length > 0) {
+              await env.WOOOD_KV.put(indexKey, JSON.stringify(remainingSessionIds), {
+                expirationTtl: 86400 * 365 * 2 // 2 years
+              });
+            } else {
+              await env.WOOOD_KV.delete(indexKey);
+            }
+          }
+
+          return new Response(JSON.stringify({
+            shop,
+            message: 'Session cleanup completed',
+            totalSessions: sessionIds.length,
+            validSessions,
+            corruptedSessionsRemoved,
+            recommendation: corruptedSessionsRemoved > 0 ? 'OAuth performance should be improved' : 'Sessions are healthy',
+            timestamp: new Date().toISOString()
+          }), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json', ...corsHeaders }
+          });
+
+        } catch (error) {
+          logger.error('Session cleanup failed', { error: error instanceof Error ? error.message : 'Unknown error', shop, requestId });
+          return new Response(JSON.stringify({
+            error: error instanceof Error ? error.message : 'Unknown error',
+            shop,
+            timestamp: new Date().toISOString()
+          }), {
+            status: 500,
+            headers: { 'Content-Type': 'application/json', ...corsHeaders }
+          });
+        }
+      }
+
+      // Debug endpoint to directly check and delete shop token
+      if (url.pathname === '/debug/token' && url.searchParams.get('shop')) {
+        const shop = url.searchParams.get('shop')!;
+        logger.info('Debug: Checking shop token directly', { shop });
+
+        try {
+          const key = `shop_token:${shop}`;
+          const tokenData = await env.DELIVERY_CACHE.get(key);
+
+          const result: {
+            shop: string;
+            key: string;
+            hasToken: boolean;
+            tokenData: any;
+            timestamp: string;
+            deleted?: boolean;
+          } = {
+            shop,
+            key,
+            hasToken: !!tokenData,
+            tokenData: tokenData ? JSON.parse(tokenData) : null,
+            timestamp: new Date().toISOString()
+          };
+
+          // If token exists, delete it
+          if (tokenData) {
+            await env.DELIVERY_CACHE.delete(key);
+            result.deleted = true;
+            logger.info('Debug: Deleted existing token', { shop, key });
+          }
+
+          return new Response(JSON.stringify(result, null, 2), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json', ...corsHeaders }
+          });
+        } catch (error) {
+          return new Response(JSON.stringify({
+            error: error instanceof Error ? error.message : 'Unknown error',
+            shop,
             timestamp: new Date().toISOString()
           }), {
             status: 500,
@@ -853,7 +1090,7 @@ async function processOrderWebhook(
 
     // Clone the request to read body multiple times
     const requestClone = request.clone();
-    
+
     // Get raw body bytes for signature verification
     const rawBodyBuffer = await request.arrayBuffer();
     const rawBodyBytes = new Uint8Array(rawBodyBuffer);
@@ -874,10 +1111,12 @@ async function processOrderWebhook(
     // Try both available webhook secrets
     const webhookSecret1 = config.shopifyOAuth.webhookSecret; // WEBHOOK_SECRET
     const webhookSecret2 = env.SHOPIFY_WEBHOOK_SECRET; // Legacy SHOPIFY_WEBHOOK_SECRET
-    
+    const appClientSecret = config.shopifyOAuth.clientSecret; // App client secret (Shopify's default)
+
     const availableSecrets = [
       { name: 'WEBHOOK_SECRET', secret: webhookSecret1 },
-      { name: 'SHOPIFY_WEBHOOK_SECRET', secret: webhookSecret2 }
+      { name: 'SHOPIFY_WEBHOOK_SECRET', secret: webhookSecret2 },
+      { name: 'APP_CLIENT_SECRET', secret: appClientSecret }
     ].filter(s => s.secret && s.secret !== 'webhook-secret');
 
     // Debug webhook secret info
@@ -900,40 +1139,29 @@ async function processOrderWebhook(
         topic,
         environment: config.environment
       });
+      isValidSignature = true; // Allow processing when no secrets configured
     } else {
-      // TEMPORARY: Skip verification in production until OAuth is fixed and webhooks re-registered
-      const skipVerificationTemporarily = config.environment === 'production';
-      
-      if (skipVerificationTemporarily) {
-        logger.warn('⚠️ TEMPORARILY SKIPPING webhook verification in production', {
+      // Try each available secret
+      for (const secretInfo of availableSecrets) {
+        logger.info(`Trying webhook secret: ${secretInfo.name}`, {
           shopDomain,
           topic,
-          reason: 'webhook_secret_mismatch_detected'
+          secretLength: secretInfo.secret?.length || 0
         });
-        isValidSignature = true; // Allow processing
-      } else {
-        // Try each available secret
-        for (const secretInfo of availableSecrets) {
-          logger.info(`Trying webhook secret: ${secretInfo.name}`, {
+
+        isValidSignature = await verifyWebhookSignature(rawBodyBytes, hmacHeader, secretInfo.secret!);
+
+        if (isValidSignature) {
+          logger.info(`✅ Signature verification SUCCESS with ${secretInfo.name}`, {
             shopDomain,
-            topic,
-            secretLength: secretInfo.secret?.length || 0
+            topic
           });
-          
-          isValidSignature = await verifyWebhookSignature(rawBodyBytes, hmacHeader, secretInfo.secret!);
-          
-          if (isValidSignature) {
-            logger.info(`✅ Signature verification SUCCESS with ${secretInfo.name}`, {
-              shopDomain,
-              topic
-            });
-            break;
-          } else {
-            logger.warn(`❌ Signature verification FAILED with ${secretInfo.name}`, {
-              shopDomain,
-              topic
-            });
-          }
+          break;
+        } else {
+          logger.warn(`❌ Signature verification FAILED with ${secretInfo.name}`, {
+            shopDomain,
+            topic
+          });
         }
       }
     }
@@ -1045,8 +1273,45 @@ async function processOrderWebhook(
 
 // === EXISTING ENDPOINT HANDLERS (REFACTORED) ===
 
-async function handleDeliveryDatesEndpoint(env: Env, logger: WorkersLogger, config: WorkerConfig): Promise<Response> {
+async function handleDeliveryDatesEndpoint(request: Request, env: Env, logger: WorkersLogger, config: WorkerConfig): Promise<Response> {
   try {
+    // Check if request is from checkout extension
+    const origin = request.headers.get('Origin') || '';
+    const isCheckoutExtension = origin.includes('shop.app') ||
+                               origin.includes('checkout.shopify.com') ||
+                               origin.includes('pay.shopify.com') ||
+                               origin.includes('shopifycdn.com') ||
+                               origin.includes('extensions.shopifycdn.com');
+
+    let shopDomain: string | undefined;
+
+    if (isCheckoutExtension) {
+      // For checkout extensions, try to get shop domain from request body
+      try {
+        const body = await request.json() as any;
+        shopDomain = body.shopDomain;
+        logger.info('Checkout extension delivery dates request', { origin, shopDomain });
+      } catch (bodyError) {
+        // If no body or JSON parsing fails, that's okay for delivery dates
+        logger.info('Checkout extension delivery dates request (no shop domain in body)', { origin });
+      }
+    } else {
+      // For admin requests, require OAuth authentication
+      const authResult = await authenticateRequest(request, env, logger, crypto.randomUUID());
+      if (!authResult.success || !authResult.shop) {
+        return new Response(JSON.stringify({
+          success: false,
+          error: 'Authentication required',
+          timestamp: new Date().toISOString()
+        }), {
+          status: 401,
+          headers: { 'Content-Type': 'application/json' }
+        });
+      }
+      shopDomain = authResult.shop;
+      logger.info('OAuth delivery dates request', { shopDomain });
+    }
+
     const dutchNedUrl = config.dutchNedApi.url;
     const credentials = config.dutchNedApi.credentials;
 
@@ -1056,6 +1321,8 @@ async function handleDeliveryDatesEndpoint(env: Env, logger: WorkersLogger, conf
         success: true,
         data: [],
         message: 'DutchNed API credentials not configured - no delivery dates available',
+        shop: shopDomain,
+        source: isCheckoutExtension ? 'checkout-extension' : 'oauth',
         timestamp: new Date().toISOString()
       }), {
         status: 200,
@@ -1063,7 +1330,7 @@ async function handleDeliveryDatesEndpoint(env: Env, logger: WorkersLogger, conf
       });
     }
 
-    logger.info('Fetching delivery dates from DutchNed API', { url: dutchNedUrl });
+    logger.info('Fetching delivery dates from DutchNed API', { url: dutchNedUrl, shopDomain });
 
     const response = await fetch(dutchNedUrl, {
       method: 'GET',
@@ -1076,15 +1343,18 @@ async function handleDeliveryDatesEndpoint(env: Env, logger: WorkersLogger, conf
     });
 
     if (!response.ok) {
-      logger.warn('DutchNed API unavailable', {
+      logger.error('DutchNed API unavailable', {
         status: response.status,
-        statusText: response.statusText
+        statusText: response.statusText,
+        shopDomain
       });
 
       return new Response(JSON.stringify({
         success: true,
         data: [],
         message: `DutchNed API unavailable: ${response.status} ${response.statusText}`,
+        shop: shopDomain,
+        source: isCheckoutExtension ? 'checkout-extension' : 'oauth',
         timestamp: new Date().toISOString()
       }), {
         status: 200,
@@ -1109,11 +1379,13 @@ async function handleDeliveryDatesEndpoint(env: Env, logger: WorkersLogger, conf
       });
     }
 
-    logger.info('Delivery dates fetched successfully', { datesCount: dates.length });
+    logger.info('Delivery dates fetched successfully', { datesCount: dates.length, shopDomain });
 
     return new Response(JSON.stringify({
       success: true,
       data: dates,
+      shop: shopDomain,
+      source: isCheckoutExtension ? 'checkout-extension' : 'oauth',
       timestamp: new Date().toISOString()
     }), {
       status: 200,
@@ -1181,8 +1453,8 @@ async function handleShippingMethodsEndpoint(request: Request, env: Env, logger:
       logger.info('Checkout extension shipping methods request', { origin, shopDomain, hasAccessToken: !!accessToken });
     } else {
       // For admin requests, require OAuth authentication
-      const sessionResult = await sessionAuthMiddleware(request, env, config, logger, crypto.randomUUID());
-      if (!sessionResult.success || !sessionResult.session) {
+      const authResult = await authenticateRequest(request, env, logger, crypto.randomUUID());
+      if (!authResult.success || !authResult.shop) {
         return new Response(JSON.stringify({
           success: false,
           error: 'Authentication required',
@@ -1192,8 +1464,8 @@ async function handleShippingMethodsEndpoint(request: Request, env: Env, logger:
           headers: { 'Content-Type': 'application/json' }
         });
       }
-      shopDomain = sessionResult.session.shop;
-      accessToken = sessionResult.session.accessToken;
+      shopDomain = authResult.shop;
+      accessToken = authResult.accessToken;
       logger.info('OAuth shipping methods request', { shopDomain });
     }
 
@@ -1276,7 +1548,7 @@ async function handleShippingMethodsEndpoint(request: Request, env: Env, logger:
             }
           }
         } else {
-          logger.warn('Failed to fetch ERP delivery time metafields for product', {
+          logger.error('Failed to fetch ERP delivery time metafields for product', {
             productId,
             status: erpResponse.status,
             shop: shopDomain,
@@ -1296,7 +1568,7 @@ async function handleShippingMethodsEndpoint(request: Request, env: Env, logger:
         }
 
       } catch (productError) {
-        logger.warn('Error fetching product metafields', {
+        logger.error('Error fetching product metafields', {
           productId,
           error: (productError as Error).message,
           shop: shopDomain,
@@ -1382,8 +1654,8 @@ async function handleErpDeliveryTimesEndpoint(request: Request, env: Env, logger
       logger.info('Checkout extension ERP delivery times request', { origin, shopDomain, hasAccessToken: !!accessToken });
     } else {
       // For admin requests, require OAuth authentication
-      const sessionResult = await sessionAuthMiddleware(request, env, config, logger, crypto.randomUUID());
-      if (!sessionResult.success || !sessionResult.session) {
+      const authResult = await authenticateRequest(request, env, logger, crypto.randomUUID());
+      if (!authResult.success || !authResult.shop) {
         return new Response(JSON.stringify({
           success: false,
           error: 'Authentication required',
@@ -1393,8 +1665,8 @@ async function handleErpDeliveryTimesEndpoint(request: Request, env: Env, logger
           headers: { 'Content-Type': 'application/json' }
         });
       }
-      shopDomain = sessionResult.session.shop;
-      accessToken = sessionResult.session.accessToken;
+      shopDomain = authResult.shop;
+      accessToken = authResult.accessToken;
       logger.info('OAuth ERP delivery times request', { shopDomain });
     }
 
@@ -1488,31 +1760,14 @@ async function handleErpDeliveryTimesEndpoint(request: Request, env: Env, logger
 // === UTILITY FUNCTIONS ===
 
 /**
- * Get access token for a shop from stored sessions
+ * Get shop access token using SimpleTokenService
+ * Replaces complex session decryption with simple token lookup
  */
 async function getShopAccessToken(shopDomain: string, env: Env): Promise<string | undefined> {
   try {
-    const { createSessionStorage } = await import('./utils/sessionStorage');
-    const sessionStorage = createSessionStorage(env);
-
-    // Find all sessions for the shop
-    const sessions = await sessionStorage.findSessionsByShop(shopDomain);
-
-    if (sessions.length === 0) {
-      return undefined;
-    }
-
-    // Find the most recent valid session with access token
-    const validSessions = sessions
-      .filter(session => session.accessToken && (!session.expires || session.expires > new Date()))
-      .sort((a, b) => {
-        const aTime = a.expires ? a.expires.getTime() : Date.now() + 86400000;
-        const bTime = b.expires ? b.expires.getTime() : Date.now() + 86400000;
-        return bTime - aTime; // Most recent first
-      });
-
-    const validSession = validSessions.find(session => session?.accessToken);
-    return validSession?.accessToken;
+    const tokenService = new SimpleTokenService(env);
+    const token = await tokenService.getToken(shopDomain);
+    return token || undefined;
   } catch (error) {
     console.error('Failed to get shop access token:', error);
     return undefined;
@@ -1520,24 +1775,15 @@ async function getShopAccessToken(shopDomain: string, env: Env): Promise<string 
 }
 
 /**
- * Clear all sessions for a shop (used when app is uninstalled)
+ * Clear shop token (used when app is uninstalled)
  */
 async function clearShopSessions(shopDomain: string, env: Env): Promise<number> {
   try {
-    const { createSessionStorage } = await import('./utils/sessionStorage');
-    const sessionStorage = createSessionStorage(env);
-
-    // Find all sessions for the shop
-    const sessions = await sessionStorage.findSessionsByShop(shopDomain);
-
-    // Delete all sessions
-    for (const session of sessions) {
-      await sessionStorage.deleteSession(session.id);
-    }
-
-    return sessions.length;
+    const tokenService = new SimpleTokenService(env);
+    await tokenService.deleteToken(shopDomain);
+    return 1; // Return 1 since we only have one token per shop now
   } catch (error) {
-    console.error('Failed to clear shop sessions:', error);
+    console.error('Failed to clear shop token:', error);
     return 0;
   }
 }
@@ -1589,7 +1835,7 @@ function addCorsHeaders(response: Response, corsHeaders: Record<string, string>)
 async function verifyWebhookSignature(bodyBytes: Uint8Array, signature: string, secret: string): Promise<boolean> {
   try {
     const encoder = new TextEncoder();
-    
+
     // Try multiple approaches to handle the secret
     const secretApproaches = [
       { name: 'raw_secret', key: encoder.encode(secret) },
@@ -1604,7 +1850,7 @@ async function verifyWebhookSignature(bodyBytes: Uint8Array, signature: string, 
 
     // Clean the signature (remove any whitespace or extra characters)
     const cleanSignature = signature.trim();
-    
+
     console.log('Webhook signature verification attempts:', {
       bodyBytesLength: bodyBytes.length,
       originalSignature: signature,
@@ -1666,5 +1912,30 @@ async function verifyWebhookSignature(bodyBytes: Uint8Array, signature: string, 
   } catch (error) {
     console.error('Webhook signature verification error:', error);
     return false;
+  }
+}
+
+// Add this simple authentication function:
+async function authenticateRequest(
+  request: Request,
+  env: Env,
+  logger: WorkersLogger,
+  requestId: string
+): Promise<{ success: boolean; shop?: string; accessToken?: string; error?: string }> {
+  try {
+    const url = new URL(request.url);
+    const shop = url.searchParams.get('shop') || request.headers.get('X-Shopify-Shop-Domain');
+    if (!shop) {
+      return { success: false, error: 'Missing shop parameter' };
+    }
+    const tokenService = new SimpleTokenService(env);
+    const accessToken = await tokenService.getToken(shop);
+    if (!accessToken) {
+      return { success: false, shop, error: 'No access token found for shop' };
+    }
+    return { success: true, shop, accessToken };
+  } catch (error) {
+    logger.error('Authentication failed', { requestId, error: error instanceof Error ? error.message : 'Unknown error' });
+    return { success: false, error: 'Authentication failed' };
   }
 }

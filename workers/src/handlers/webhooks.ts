@@ -2,6 +2,7 @@ import { IRequest } from 'itty-router';
 import { Env } from '../types/env';
 import { WorkersLogger } from '../utils/logger';
 import { createErrorResponse, createSuccessResponse } from './health';
+import { SimpleTokenService } from '../services/simpleTokenService';
 
 export interface WebhookRegistrationRequest {
   shop: string;
@@ -107,7 +108,7 @@ const NOTE_ATTRIBUTE_MAPPING: NoteAttributeMapping = {
 export async function handleWebhookRegistration(request: Request, env: Env, logger: WorkersLogger): Promise<Response> {
   try {
     const data = await request.json() as WebhookRegistrationRequest;
-    
+
     if (!data.shop || !data.accessToken) {
       return new Response(JSON.stringify({
         success: false,
@@ -125,7 +126,7 @@ export async function handleWebhookRegistration(request: Request, env: Env, logg
     for (const webhook of ORDER_WEBHOOKS) {
       try {
         const webhookUrl = `${baseUrl}${webhook.endpoint}`;
-        
+
         logger.info('Registering webhook', {
           shop: data.shop,
           topic: webhook.topic,
@@ -133,13 +134,13 @@ export async function handleWebhookRegistration(request: Request, env: Env, logg
         });
 
         const webhookResponse = await registerShopifyWebhook(
-          data.shop, 
-          data.accessToken, 
-          webhook.topic, 
+          data.shop,
+          data.accessToken,
+          webhook.topic,
           webhookUrl,
           env.SHOPIFY_WEBHOOK_SECRET || 'webhook-secret'
         );
-        
+
         if (!webhookResponse.success) {
           throw new Error(webhookResponse.error || 'Failed to register webhook');
         }
@@ -243,7 +244,7 @@ async function handleOrderWebhook(request: Request, env: Env, logger: WorkersLog
     // Verify webhook signature
     const signature = request.headers.get('X-Shopify-Hmac-Sha256');
     const shop = request.headers.get('X-Shopify-Shop-Domain');
-    
+
     if (!signature || !shop) {
       logger.warn('Missing webhook headers', { signature: !!signature, shop: shop ?? undefined });
       return new Response(JSON.stringify({
@@ -257,27 +258,40 @@ async function handleOrderWebhook(request: Request, env: Env, logger: WorkersLog
 
     // Get webhook configuration
     const webhookConfigData = await env.DELIVERY_CACHE.get(`webhook:${shop}:${topic}`);
-    if (!webhookConfigData) {
-      logger.warn('Webhook not registered', { shop, topic });
+    let accessToken: string | null = null;
+    let webhookConfig: WebhookConfig | null = null;
+
+    if (webhookConfigData) {
+      webhookConfig = JSON.parse(webhookConfigData);
+      accessToken = webhookConfig?.accessToken || null;
+    }
+
+    // Fallback to SimpleTokenService if webhook config doesn't have token
+    if (!accessToken) {
+      logger.info('Webhook config missing access token, using SimpleTokenService fallback', { shop, topic });
+      const tokenService = new SimpleTokenService(env);
+      accessToken = await tokenService.getToken(shop);
+    }
+
+    if (!accessToken) {
+      logger.warn('No access token found for webhook processing', { shop, topic });
       return new Response(JSON.stringify({
         success: false,
-        error: 'Webhook not registered for this shop and topic'
+        error: 'No access token found for shop'
       }), {
-        status: 404,
+        status: 401,
         headers: { 'Content-Type': 'application/json' }
       });
     }
 
-    const webhookConfig: WebhookConfig = JSON.parse(webhookConfigData);
-    
     // Verify webhook signature
     const body = await request.text();
     const isValidSignature = await verifyWebhookSignature(
-      body, 
-      signature, 
+      body,
+      signature,
       env.SHOPIFY_WEBHOOK_SECRET || 'webhook-secret'
     );
-    
+
     if (!isValidSignature) {
       logger.warn('Invalid webhook signature', { shop, topic, signature });
       return new Response(JSON.stringify({
@@ -290,7 +304,7 @@ async function handleOrderWebhook(request: Request, env: Env, logger: WorkersLog
     }
 
     const order: ShopifyOrder = JSON.parse(body);
-    
+
     logger.info('Processing order webhook', {
       shop,
       topic,
@@ -300,7 +314,7 @@ async function handleOrderWebhook(request: Request, env: Env, logger: WorkersLog
 
     // Extract and process note attributes
     const noteAttributes = extractNoteAttributes(order.note_attributes);
-    
+
     if (!noteAttributes.delivery_date && !noteAttributes.shipping_method) {
       logger.info('No relevant note attributes found', {
         orderId: order.id,
@@ -318,20 +332,22 @@ async function handleOrderWebhook(request: Request, env: Env, logger: WorkersLog
     // Create order metafields from note attributes
     const metafieldResults = await createOrderMetafieldsFromAttributes(
       shop,
-      webhookConfig.accessToken,
+      accessToken,
       order.id,
       noteAttributes,
       env,
       logger
     );
 
-    // Update webhook status
-    webhookConfig.lastSuccess = new Date().toISOString();
-    await env.DELIVERY_CACHE.put(
-      `webhook:${shop}:${topic}`,
-      JSON.stringify(webhookConfig),
-      { expirationTtl: 365 * 24 * 60 * 60 }
-    );
+    // Update webhook status if config exists
+    if (webhookConfig) {
+      webhookConfig.lastSuccess = new Date().toISOString();
+      await env.DELIVERY_CACHE.put(
+        `webhook:${shop}:${topic}`,
+        JSON.stringify(webhookConfig),
+        { expirationTtl: 365 * 24 * 60 * 60 }
+      );
+    }
 
     // Store processing status
     await env.DELIVERY_CACHE.put(
@@ -404,7 +420,7 @@ export async function handleWebhookStatus(request: Request, env: Env, logger: Wo
     // Check status of all registered webhooks
     for (const webhook of ORDER_WEBHOOKS) {
       const webhookConfigData = await env.DELIVERY_CACHE.get(`webhook:${shop}:${webhook.topic}`);
-      
+
       if (webhookConfigData) {
         const config: WebhookConfig = JSON.parse(webhookConfigData);
         webhookStatuses.push({
@@ -453,9 +469,9 @@ export async function handleWebhookStatus(request: Request, env: Env, logger: Wo
  * Register a webhook with Shopify Admin API
  */
 async function registerShopifyWebhook(
-  shop: string, 
-  accessToken: string, 
-  topic: string, 
+  shop: string,
+  accessToken: string,
+  topic: string,
   address: string,
   secret?: string
 ): Promise<{ success: boolean; webhookId?: string; error?: string }> {
@@ -464,8 +480,7 @@ async function registerShopifyWebhook(
       webhook: {
         topic,
         address,
-        format: 'json',
-        ...(secret && { api_client_id: secret })
+        format: 'json'
       }
     };
 
@@ -508,7 +523,7 @@ async function verifyWebhookSignature(body: string, signature: string, secret: s
     const encoder = new TextEncoder();
     const data = encoder.encode(body);
     const key = encoder.encode(secret);
-    
+
     const cryptoKey = await crypto.subtle.importKey(
       'raw',
       key,
@@ -516,10 +531,10 @@ async function verifyWebhookSignature(body: string, signature: string, secret: s
       false,
       ['sign']
     );
-    
+
     const signatureBuffer = await crypto.subtle.sign('HMAC', cryptoKey, data);
     const expectedSignature = btoa(String.fromCharCode(...new Uint8Array(signatureBuffer)));
-    
+
     return signature === expectedSignature;
   } catch (error) {
     return false;
@@ -614,7 +629,7 @@ async function createOrderMetafield(
 ): Promise<{ success: boolean; error?: string }> {
   try {
     const [namespace, metafieldKey] = key.split('.');
-    
+
     const metafieldData = {
       metafield: {
         namespace,
@@ -649,4 +664,4 @@ async function createOrderMetafield(
       error: error.message
     };
   }
-} 
+}

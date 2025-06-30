@@ -1,6 +1,7 @@
 import { Env } from '../types/env';
 import { WorkersLogger } from '../utils/logger';
 import { ShopifyOrder } from './webhooks';
+import { SimpleTokenService } from '../services/simpleTokenService';
 
 /**
  * Order processing result interface
@@ -56,7 +57,7 @@ export async function handleOrderCreated(
   logger: WorkersLogger
 ): Promise<OrderProcessingResult> {
   const startTime = Date.now();
-  
+
   logger.info('Processing order created webhook', {
     orderId: orderData.id,
     orderNumber: orderData.order_number,
@@ -73,7 +74,7 @@ export async function handleOrderCreated(
 
     // Extract note attributes
     const noteAttributes = extractNoteAttributes(orderData.note_attributes);
-    
+
     // Validate required data
     const validationErrors = validateNoteAttributes(noteAttributes);
     if (validationErrors.length > 0) {
@@ -81,7 +82,7 @@ export async function handleOrderCreated(
         orderId: orderData.id,
         errors: validationErrors
       });
-      
+
       // Mark as completed with warnings if no critical data
       await updateProcessingStatus(orderData.id, shop, {
         status: 'completed',
@@ -197,7 +198,7 @@ export async function handleOrderPaid(
   logger: WorkersLogger
 ): Promise<OrderProcessingResult> {
   const startTime = Date.now();
-  
+
   logger.info('Processing order paid webhook', {
     orderId: orderData.id,
     orderNumber: orderData.order_number,
@@ -208,7 +209,7 @@ export async function handleOrderPaid(
   try {
     // Check if order was already processed during creation
     const existingStatus = await getProcessingStatus(orderData.id, shop, env);
-    
+
     if (existingStatus && existingStatus.status === 'completed') {
       logger.info('Order already processed, updating payment status', {
         orderId: orderData.id
@@ -278,7 +279,7 @@ export async function handleOrderUpdated(
   logger: WorkersLogger
 ): Promise<OrderProcessingResult> {
   const startTime = Date.now();
-  
+
   logger.info('Processing order updated webhook', {
     orderId: orderData.id,
     orderNumber: orderData.order_number,
@@ -288,16 +289,16 @@ export async function handleOrderUpdated(
   try {
     // Get previous processing status
     const existingStatus = await getProcessingStatus(orderData.id, shop, env);
-    
+
     // Extract current note attributes
     const currentNoteAttributes = extractNoteAttributes(orderData.note_attributes);
-    
+
     // If order was never processed, process it now
     if (!existingStatus) {
       logger.info('Order never processed, processing note attributes', {
         orderId: orderData.id
       });
-      
+
       return await handleOrderCreated(orderData, shop, env, logger);
     }
 
@@ -307,7 +308,7 @@ export async function handleOrderUpdated(
       logger.info('No previous order data found, reprocessing', {
         orderId: orderData.id
       });
-      
+
       return await handleOrderCreated(orderData, shop, env, logger);
     }
 
@@ -492,42 +493,24 @@ function validateNoteAttributes(noteAttributes: {
 }
 
 /**
- * Get shop configuration using session storage (same method as API endpoints)
+ * Get shop configuration using SimpleTokenService
  */
 async function getShopConfiguration(shop: string, env: Env): Promise<{
   accessToken: string;
   webhookId: string;
 } | null> {
   try {
-    // Use the same session storage method as the API endpoints
-    const { createSessionStorage } = await import('../utils/sessionStorage');
-    const sessionStorage = createSessionStorage(env);
+    // Use simple token service instead of session storage
+    const tokenService = new SimpleTokenService(env);
+    const accessToken = await tokenService.getToken(shop);
 
-    // Find all sessions for the shop
-    const sessions = await sessionStorage.findSessionsByShop(shop);
-
-    if (sessions.length === 0) {
-      return null;
-    }
-
-    // Find the most recent valid session with access token
-    const validSessions = sessions
-      .filter(session => session.accessToken && (!session.expires || session.expires > new Date()))
-      .sort((a, b) => {
-        const aTime = a.expires ? a.expires.getTime() : Date.now() + 86400000;
-        const bTime = b.expires ? b.expires.getTime() : Date.now() + 86400000;
-        return bTime - aTime; // Most recent first
-      });
-
-    const validSession = validSessions.find(session => session?.accessToken);
-    
-    if (!validSession || !validSession.accessToken) {
+    if (!accessToken) {
       return null;
     }
 
     return {
-      accessToken: validSession.accessToken,
-      webhookId: 'session-based' // We don't need the actual webhook ID for processing
+      accessToken,
+      webhookId: 'token-based' // We don't need the actual webhook ID for processing
     };
   } catch (error) {
     console.error('Failed to get shop configuration:', error);
@@ -547,9 +530,9 @@ async function updateProcessingStatus(
   try {
     const key = `order_processing_status:${shop}:${orderId}`;
     const existingData = await env.DELIVERY_CACHE.get(key);
-    
+
     let status: ProcessingStatus;
-    
+
     if (existingData) {
       status = { ...JSON.parse(existingData), ...updates };
     } else {
@@ -587,7 +570,7 @@ async function getProcessingStatus(
   try {
     const key = `order_processing_status:${shop}:${orderId}`;
     const data = await env.DELIVERY_CACHE.get(key);
-    
+
     return data ? JSON.parse(data) : null;
   } catch (error) {
     return null;
@@ -657,7 +640,7 @@ async function createOrUpdateOrderMetafield(
 ): Promise<{ success: boolean; error?: string }> {
   try {
     const [namespace, metafieldKey] = key.split('.');
-    
+
     // First try to get existing metafield
     const existingResponse = await fetch(
       `https://${shop}/admin/api/2025-04/orders/${orderId}/metafields.json?namespace=${namespace}&key=${metafieldKey}`,
@@ -671,11 +654,11 @@ async function createOrUpdateOrderMetafield(
 
     if (existingResponse.ok) {
       const existingData = await existingResponse.json() as any;
-      
+
       if (existingData.metafields && existingData.metafields.length > 0) {
         // Update existing metafield
         const metafieldId = existingData.metafields[0].id;
-        
+
         const updateResponse = await fetch(
           `https://${shop}/admin/api/2025-04/orders/${orderId}/metafields/${metafieldId}.json`,
           {
@@ -780,4 +763,4 @@ async function updatePaymentStatusMetafield(
       error: error.message
     });
   }
-} 
+}

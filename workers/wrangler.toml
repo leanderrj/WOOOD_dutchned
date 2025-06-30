@@ -56,6 +56,7 @@ CORS_ORIGINS = "https://shop.app,https://checkout.shopify.com,https://pay.shopif
 DUTCHNED_API_URL = "https://eekhoorn-connector.dutchned.com/api/delivery-dates/available"
 SHOPIFY_API_VERSION = "2025-04"
 SHOPIFY_APP_CLIENT_ID = "1c7701d2e09d4ede7616f35e13d472ef"
+SHOPIFY_APP_URL = "https://woood-production.leander-4e0.workers.dev"
 ENABLE_DEBUG_LOGGING = "false"
 ENABLE_RATE_LIMITING = "true"
 ENABLE_CACHING = "true"

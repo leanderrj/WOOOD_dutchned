@@ -14,13 +14,20 @@ The WOOOD Delivery Date Picker implements enterprise-grade security controls des
 - **Data Minimization**: Collect only required data
 - **Encryption Everywhere**: End-to-end data protection
 
+## 🛡️ Security Architecture
+
+The WOOOD Delivery Date Picker implements a **7-layer security model**:
+
 ```mermaid
-graph TB
-    subgraph "Security Layers"
+graph TD
+    Request[Incoming Request]
+    Response[Response]
+    
+    subgraph Security Layers
         L1[Transport Security - TLS 1.3]
         L2[Authentication - OAuth 2.0]
         L3[Authorization - RBAC]
-        L4[Session Security - AES-GCM]
+        L4[Token Security - KV Storage]
         L5[Input Validation - XSS/Injection Prevention]
         L6[Rate Limiting - DDoS Protection]
         L7[Monitoring - Threat Detection]
@@ -66,9 +73,9 @@ sequenceDiagram
     CF->>S: POST /admin/oauth/access_token
     S-->>CF: Access token + shop info
 
-    CF->>CF: Create encrypted session
-    CF->>KV: Store session (AES-GCM)
-    CF-->>S: Redirect with session cookie
+    CF->>CF: Store token in KV
+    CF->>KV: Store token (shop_token:${shop})
+    CF-->>S: Installation complete
 ```
 
 **Security Validations**:
@@ -123,10 +130,9 @@ export async function validateOAuthCallback(
 **Authorization Matrix**:
 ```typescript
 interface SecurityContext {
-  sessionType: 'none' | 'customer' | 'admin' | 'webhook';
+  authType: 'none' | 'token' | 'admin' | 'webhook';
   shop?: string;
-  userId?: string;
-  permissions?: string[];
+  accessToken?: string;
   ipAddress: string;
   userAgent: string;
 }
@@ -138,8 +144,8 @@ const authorizationMatrix = {
   '/auth/callback': ['none'],
 
   // Customer API endpoints
-  '/api/delivery-dates/available': ['customer', 'admin'],
-  '/api/shipping-methods/available': ['customer', 'admin'],
+  '/api/delivery-dates/available': ['token', 'admin'],
+  '/api/shipping-methods/available': ['token', 'admin'],
 
   // Admin endpoints
   '/api/admin/feature-flags': ['admin'],
@@ -169,12 +175,12 @@ export async function authorize(
   }
 
   // Check if context has required role
-  if (!requiredRoles.includes(context.sessionType)) {
+  if (!requiredRoles.includes(context.authType)) {
     return { authorized: false, error: 'Insufficient permissions' };
   }
 
   // Additional checks for admin endpoints
-  if (context.sessionType === 'admin') {
+  if (context.authType === 'admin') {
     return await validateAdminAccess(context, env);
   }
 
@@ -182,136 +188,54 @@ export async function authorize(
 }
 ```
 
-### Session Security
+### Token Security
 
-**AES-GCM Encryption**:
+**SimpleTokenService Implementation**:
 ```typescript
-export class SecureSessionManager {
-  private static readonly ALGORITHM = 'AES-GCM';
-  private static readonly KEY_LENGTH = 256;
-  private static readonly IV_LENGTH = 12;
+export class SimpleTokenService {
+  constructor(private env: Env) {}
 
-  static async encryptSession(
-    session: Session,
-    encryptionKey: string
-  ): Promise<EncryptedSession> {
-    // 1. Import encryption key
-    const key = await crypto.subtle.importKey(
-      'raw',
-      new TextEncoder().encode(encryptionKey),
-      { name: this.ALGORITHM },
-      false,
-      ['encrypt']
-    );
-
-    // 2. Generate random IV
-    const iv = crypto.getRandomValues(new Uint8Array(this.IV_LENGTH));
-
-    // 3. Encrypt session data
-    const sessionData = new TextEncoder().encode(JSON.stringify(session));
-    const encryptedData = await crypto.subtle.encrypt(
-      { name: this.ALGORITHM, iv },
-      key,
-      sessionData
-    );
-
-    // 4. Combine IV and encrypted data
-    const combined = new Uint8Array(iv.length + encryptedData.byteLength);
-    combined.set(iv);
-    combined.set(new Uint8Array(encryptedData), iv.length);
-
-    return {
-      data: btoa(String.fromCharCode(...combined)),
-      algorithm: this.ALGORITHM,
-      createdAt: new Date().toISOString()
+  async storeToken(shop: string, accessToken: string): Promise<void> {
+    const tokenData: ShopToken = {
+      accessToken,
+      createdAt: new Date().toISOString(),
+      shop
     };
+
+    await this.env.DELIVERY_CACHE.put(
+      `shop_token:${shop}`,
+      JSON.stringify(tokenData),
+      { expirationTtl: 86400 * 365 * 2 } // 2 years
+    );
   }
 
-  static async decryptSession(
-    encryptedSession: EncryptedSession,
-    encryptionKey: string
-  ): Promise<Session> {
-    // 1. Decode base64 data
-    const combined = new Uint8Array(
-      atob(encryptedSession.data)
-        .split('')
-        .map(char => char.charCodeAt(0))
-    );
+  async getToken(shop: string): Promise<string | null> {
+    try {
+      const tokenData = await this.env.DELIVERY_CACHE.get(`shop_token:${shop}`);
+      if (!tokenData) {
+        return null;
+      }
 
-    // 2. Extract IV and encrypted data
-    const iv = combined.slice(0, this.IV_LENGTH);
-    const encryptedData = combined.slice(this.IV_LENGTH);
+      const parsed: ShopToken = JSON.parse(tokenData);
+      return parsed.accessToken || null;
+    } catch (error) {
+      console.error('Failed to get token for shop:', shop, error);
+      return null;
+    }
+  }
 
-    // 3. Import decryption key
-    const key = await crypto.subtle.importKey(
-      'raw',
-      new TextEncoder().encode(encryptionKey),
-      { name: this.ALGORITHM },
-      false,
-      ['decrypt']
-    );
-
-    // 4. Decrypt data
-    const decryptedData = await crypto.subtle.decrypt(
-      { name: this.ALGORITHM, iv },
-      key,
-      encryptedData
-    );
-
-    // 5. Parse session
-    const sessionJson = new TextDecoder().decode(decryptedData);
-    return JSON.parse(sessionJson);
+  async deleteToken(shop: string): Promise<void> {
+    await this.env.DELIVERY_CACHE.delete(`shop_token:${shop}`);
   }
 }
 ```
 
-**Session Fingerprinting**:
-```typescript
-export async function createSessionFingerprint(
-  request: Request,
-  session: Session
-): Promise<SessionFingerprint> {
-  const userAgent = request.headers.get('User-Agent') || '';
-  const ipAddress = request.headers.get('CF-Connecting-IP') ||
-                   request.headers.get('X-Forwarded-For') || '';
-
-  // Hash sensitive data for privacy
-  const hashedUserAgent = await sha256(userAgent);
-  const hashedIP = await sha256(ipAddress);
-
-  return {
-    userAgentHash: hashedUserAgent,
-    ipAddressHash: hashedIP,
-    shopDomain: session.shop,
-    createdAt: new Date().toISOString(),
-    lastValidated: new Date().toISOString()
-  };
-}
-
-export async function validateSessionFingerprint(
-  request: Request,
-  storedFingerprint: SessionFingerprint
-): Promise<boolean> {
-  const currentFingerprint = await createSessionFingerprint(request, {
-    shop: storedFingerprint.shopDomain
-  } as Session);
-
-  // Allow some flexibility for IP changes (mobile networks)
-  const userAgentMatch = currentFingerprint.userAgentHash === storedFingerprint.userAgentHash;
-  const shopMatch = currentFingerprint.shopDomain === storedFingerprint.shopDomain;
-
-  // Log suspicious activity
-  if (!userAgentMatch || !shopMatch) {
-    await logSecurityEvent('session_fingerprint_mismatch', {
-      stored: storedFingerprint,
-      current: currentFingerprint,
-      severity: 'medium'
-    });
-  }
-
-  return userAgentMatch && shopMatch;
-}
-```
+**Token Security Features**:
+- **Shop Isolation**: Each shop has its own token key (`shop_token:${shop}`)
+- **Automatic Expiration**: Tokens expire after 2 years
+- **No Encryption Overhead**: Tokens stored as-is (Shopify tokens are already secure)
+- **Simple Lookup**: Direct KV lookup by shop domain
+- **No Session State**: Eliminates session corruption and race conditions
 
 ## 🔐 Data Protection
 

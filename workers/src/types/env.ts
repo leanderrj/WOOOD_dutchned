@@ -152,19 +152,9 @@ export function parseEnvironment(env: Env): WorkerConfig {
       enabled: env.ENABLE_CACHING === 'true',
     },
     cors: {
-      origins: (() => {
-        const corsOrigins = env.CORS_ORIGINS || 'https://shop.app,https://checkout.shopify.com,https://*.myshopify.com';
-        const parsedOrigins = corsOrigins.split(',').map(origin => origin.trim());
-
-        // Temporary debug logging
-        console.log('CORS Origins Parsing:', {
-          env_CORS_ORIGINS: env.CORS_ORIGINS,
-          corsOrigins,
-          parsedOrigins
-        });
-
-        return parsedOrigins;
-      })(),
+      origins: (env.CORS_ORIGINS || 'https://shop.app,https://checkout.shopify.com,https://*.myshopify.com')
+        .split(',')
+        .map(origin => origin.trim()),
     },
     rateLimit: {
       enabled: env.ENABLE_RATE_LIMITING === 'true',

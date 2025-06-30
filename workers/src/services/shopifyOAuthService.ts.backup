@@ -487,12 +487,6 @@ export class ShopifyOAuthService {
    */
   private async storeOAuthState(state: string, shop: string, isOnline: boolean): Promise<void> {
     try {
-      // Check if KV is available
-      if (!this.env.DELIVERY_CACHE) {
-        console.warn("DELIVERY_CACHE not available, skipping OAuth state storage");
-        return; // Skip state storage but do not fail OAuth
-      }
-
       const stateData = JSON.stringify({
         shop,
         isOnline,
@@ -504,9 +498,8 @@ export class ShopifyOAuthService {
         expirationTtl: 600 // 10 minutes
       });
     } catch (error) {
-      console.error("Failed to store OAuth state:", error);
-      // Do not throw error - just log it and continue
-      console.warn("Continuing OAuth flow without state storage");
+      console.error('Failed to store OAuth state:', error);
+      throw new Error('Failed to store OAuth state for CSRF protection');
     }
   }
 
@@ -519,52 +512,42 @@ export class ShopifyOAuthService {
         return false;
       }
 
-      // Check if KV is available
-      if (!this.env.DELIVERY_CACHE) {
-        console.warn("DELIVERY_CACHE not available, skipping OAuth state validation");
-        return true; // Allow OAuth to continue without state validation
-      }
-
       // Retrieve stored state data
       const storedStateData = await this.env.DELIVERY_CACHE.get(`oauth_state_${state}`);
 
       if (!storedStateData) {
-        console.warn("OAuth state not found or expired:", { state: state.substring(0, 8) + "..." });
-        return true; // Allow OAuth to continue even without state
+        console.warn('OAuth state not found or expired:', { state: state.substring(0, 8) + '...' });
+        return false;
       }
 
       const stateInfo = JSON.parse(storedStateData);
 
       // Validate that the shop matches
       if (stateInfo.shop !== shop) {
-        console.warn("OAuth state shop mismatch:", {
+        console.warn('OAuth state shop mismatch:', {
           expected: stateInfo.shop,
           received: shop
         });
-        return true; // Allow OAuth to continue
+        return false;
       }
 
       // Check if state is not too old (extra safety, TTL should handle this)
       const maxAge = 10 * 60 * 1000; // 10 minutes
       if (Date.now() - stateInfo.createdAt > maxAge) {
-        console.warn("OAuth state expired:", {
+        console.warn('OAuth state expired:', {
           age: Date.now() - stateInfo.createdAt,
           maxAge
         });
-        return true; // Allow OAuth to continue
+        return false;
       }
 
       // Clean up used state
-      try {
-        await this.env.DELIVERY_CACHE.delete(`oauth_state_${state}`);
-      } catch (cleanupError) {
-        console.warn("Failed to cleanup OAuth state:", cleanupError);
-      }
+      await this.env.DELIVERY_CACHE.delete(`oauth_state_${state}`);
 
       return true;
     } catch (error) {
-      console.error("Failed to validate OAuth state:", error);
-      return true; // Allow OAuth to continue on error
+      console.error('Failed to validate OAuth state:', error);
+      return false;
     }
   }
 
@@ -611,12 +594,6 @@ export class ShopifyOAuthService {
    */
   private async isNewInstallation(shop: string): Promise<boolean> {
     try {
-      // Check if KV is available
-      if (!this.env.DELIVERY_CACHE) {
-        console.warn("DELIVERY_CACHE not available, assuming new installation");
-        return true; // Assume new installation when KV is not available
-      }
-
       // Check if shop index exists (much faster than loading sessions)
       const indexKey = `shop_index:${shop}`;
       const indexData = await this.env.DELIVERY_CACHE.get(indexKey);
@@ -628,7 +605,7 @@ export class ShopifyOAuthService {
       const sessionIds: string[] = JSON.parse(indexData);
       return sessionIds.length === 0; // Empty array = new installation
     } catch (error) {
-      console.warn("Failed to check installation status, assuming new:", error);
+      console.warn('Failed to check installation status, assuming new:', error);
       return true; // Assume new installation on error (safer)
     }
   }

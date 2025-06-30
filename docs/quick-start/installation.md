@@ -43,9 +43,7 @@ npx wrangler kv:namespace create "WOOOD_KV"
 # Configure secrets (replace with your actual values)
 npx wrangler secret put SHOPIFY_APP_CLIENT_SECRET --env development
 npx wrangler secret put DUTCHNED_API_CREDENTIALS --env development
-npx wrangler secret put SESSION_SECRET --env development
 npx wrangler secret put WEBHOOK_SECRET --env development
-npx wrangler secret put API_ENCRYPTION_KEY --env development
 ```
 
 ### Step 3: Shopify App Setup
@@ -70,9 +68,7 @@ Create environment files with your credentials:
 ```bash
 SHOPIFY_APP_CLIENT_SECRET=your_shopify_client_secret
 DUTCHNED_API_CREDENTIALS=your_dutchned_credentials
-SESSION_SECRET=your_session_secret_32_chars_min
 WEBHOOK_SECRET=your_webhook_secret
-API_ENCRYPTION_KEY=your_encryption_key_32_chars
 ```
 
 **extensions/date-picker/.env.development**:
